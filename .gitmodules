@@ -1,0 +1,3 @@
+[submodule "python-plexapi"]
+	path = python-plexapi
+	url = https://github.com/pkkid/python-plexapi.git
