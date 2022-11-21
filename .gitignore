@@ -124,3 +124,7 @@ dmypy.json
 .pyre/
 
 Logs/
+
+engines/
+
+trash/
