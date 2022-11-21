@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import datetime
-from PlexAutoTorrentConfig import config
+from config import config
 import json
 import os
 import shutil
@@ -10,10 +10,11 @@ import urllib.parse
 import nova2
 import subprocess
 from sys import argv
+import requests
 
-_TORRENT_FILE_PATH = PlexAutoTorrentConfig.TORRENT_FILE_PATH
-_QBITTORRENT_PATH = PlexAutoTorrentConfig.QBITTORRENT_PATH
-_MOVIES_PATH = PlexAutoTorrentConfig.MOVIES_PATH
+_TORRENT_FILE_PATH = config.TORRENT_FILE_PATH
+_QBITTORRENT_PATH = config.QBITTORRENT_PATH
+_MOVIES_PATH = config.MOVIES_PATH
 _LOG_FILEPATH = os.path.dirname(os.path.realpath(__file__))+'/Logs/Log_'+datetime.utcnow().strftime('%Y%m%d')+'.txt'
 _DO_LOG = False
 _DO_DRYRUN = False
@@ -21,6 +22,13 @@ _DO_DRYRUN = False
 CAT_CONVERT = {
     "movie": "movies",
     "show": "tv"
+}
+
+TELEGRAM_REPORT = {
+    "movies": [],
+    "shows": [],
+    "f1": [],
+    "error": []
 }
 
 DEBUG_COUNT = {
@@ -54,14 +62,16 @@ def doLogDebug(string):
     a = ""
 
 def doLog(string):    
-    txt = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')+" :: " + string + "\n"
-    os.makedirs(os.path.dirname(_LOG_FILEPATH), exist_ok=True)
-    f= open(_LOG_FILEPATH,"a")
-    f.write(txt)
-    print(txt)
-    f.close()
+    if(_DO_LOG):
+        txt = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')+" :: " + string + "\n"
+        os.makedirs(os.path.dirname(_LOG_FILEPATH), exist_ok=True)
+        f= open(_LOG_FILEPATH,"a")
+        f.write(txt)
+        print(txt)
+        f.close()
 
 def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
+    result = None
     if torrentPluginResult is not None: 
         doLogDebug("movie"+ torrent_path +"torrentPluginResult is not None")
         if len(torrentPluginResult) > 0:            
@@ -78,14 +88,18 @@ def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
                             f.write(torrent[0])
                             f.close()
                         os.chdir(os.path.dirname(_QBITTORRENT_PATH)) 
-                        proc = subprocess.run([_QBITTORRENT_PATH, torrent[0], "--add-paused=false", "--skip-dialog=true", '--sequential', '--save-path='+save_path+'/'])     
-                        DEBUG_COUNT['magnetDownloaded'] = DEBUG_COUNT['magnetDownloaded'] + 1 
+                        proc = subprocess.run([_QBITTORRENT_PATH, torrent[0], "--add-paused=false", "--skip-dialog=true", '--sequential', '--save-path='+save_path+'/']) 
                         if proc.returncode > 0:
+                            TELEGRAM_REPORT["error"].append("Return: "+str(proc.returncode)+"; \n stderr: "+proc.stderr.decode()+"; \n stdout: "+proc.stdout.decode())
                             os.remove(torrent_path+".magnet") 
                             doLog(proc.returncode)  
                             doLog(proc.stderr.decode())
                             doLog(proc.stdout.decode())
-                    else:
+                        else:    
+                            DEBUG_COUNT['magnetDownloaded'] = DEBUG_COUNT['magnetDownloaded'] + 1 
+                            result = torrent_path+".magnet"
+                    else:    
+                        DEBUG_COUNT['magnetDownloaded'] = DEBUG_COUNT['magnetDownloaded'] + 1 
                         doLogDebug("DRY RUN:  "+torrent_path+"; "+save_path)
                           
                     doLogDebug("Magnet Link:  ")
@@ -96,15 +110,20 @@ def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
                         cmd2 = ' '.join(cmd)
                         os.chdir(os.path.dirname(_QBITTORRENT_PATH))
                         proc = subprocess.run([_QBITTORRENT_PATH, ''+torrent_path+".torrent"+'', "--add-paused=false", '--sequential',  "--skip-dialog=true",'--save-path='+save_path+'/'])  
-                        DEBUG_COUNT['torrentDownloaded'] = DEBUG_COUNT['torrentDownloaded'] + 1 
                         if proc.returncode > 0:
+                            TELEGRAM_REPORT["error"].append("Return: "+str(proc.returncode)+"; \n stderr: "+proc.stderr.decode()+"; \n stdout: "+proc.stdout.decode())
                             os.remove(torrent_path+".torrent") 
                             doLog(proc.returncode)  
                             doLog(proc.stderr.decode())
                             doLog(proc.stdout.decode())  
+                        else:
+                            DEBUG_COUNT['torrentDownloaded'] = DEBUG_COUNT['torrentDownloaded'] + 1 
+                            result = torrent_path+".torrent"
                     else:
+                        DEBUG_COUNT['torrentDownloaded'] = DEBUG_COUNT['torrentDownloaded'] + 1 
                         doLogDebug("DRY RUN:  "+torrent_path+"; "+save_path)
                     #doLog(foundEngine+ ", "+foundObj[1] + ", " + movie.type+ ", "+imdb.id+":::  "+torrent[0]) "--skip-dialog", "true",
+    return result
 
 
 
@@ -121,8 +140,8 @@ def doMovies(movieList, plexConnection, plexuser):
         if len(movieOnPlex) == 0:
             foundObj = None
             foundEngine = "--"
-            for engine in plexuser.engine_order:
-                for extra in plexuser.extra_order:
+            for engine in plexuser.movie_engine_order:
+                for extra in plexuser.movie_extra_order:
                     if foundObj is None:
                         torrent_path = _TORRENT_FILE_PATH+movie.type+"/"+re.sub(r'[\W_]+', '', imdb.id)+"_"+engine+"_" + url_title +""                    
                         
@@ -140,7 +159,9 @@ def doMovies(movieList, plexConnection, plexuser):
                             resultArr = ["","","","","","","","","",""]
             
             if foundObj is not None: 
-                doDownloadTorrent(foundObj, torrent_path, _MOVIES_PATH+url_title)                
+                res = doDownloadTorrent(foundObj, torrent_path, _MOVIES_PATH+url_title)                
+                if res is not None:                    
+                    TELEGRAM_REPORT["movies"].append("Added torrent: "+movie.title+" " + str(movie.year) +", "+res)
             else:
                 doLog(foundEngine+ ", "+movie.title + " " + str(movie.year) +", " + movie.type+ ", "+imdb.id+":::  Not Found! ")
                 DEBUG_COUNT['notFound'] = DEBUG_COUNT['notFound'] + 1 
@@ -153,15 +174,60 @@ def doMovies(movieList, plexConnection, plexuser):
 def doShows(showList, plexConnection, plexuser):
     for show in showList:
         global DEBUG_COUNT
-        imdb = list(filter(lambda guid: guid.id.startswith("imdb:"), show.guids))[0]
+        tvdb = list(filter(lambda guid: guid.id.startswith("tvdb:"), show.guids))[0]
         showOnPlex = plexConnection.library.search(guid=show.guid, libtype=show.type)
+        currEpisode = 0
+        currSeason = 1
+        nextSeason = 1
+        result = None
 
-        if len(showOnPlex) == 0:
-            
-            doLogDebug("NotOnPlex, "+show.title + " "+str(show.year)+ ", " + show.type+ ", "+imdb.id+"::: Not Found On Plex!! ")
+        if len(showOnPlex) > 0:    
+            showOnPlex = showOnPlex[0]
+            currEpisode = showOnPlex.episodes()[-1].episodeNumber
+            currSeason = showOnPlex.episodes()[-1].seasonNumber
+            nextSeason = currSeason+1
+        else:
+            showOnPlex = show
+
+        result = searchShowNext(plexuser, showOnPlex, "S"+f'{currSeason:02}'+"E"+f'{(currEpisode+1):02}')   #Search for next episode
+        if result == None:
+            result = searchShowNext(plexuser, showOnPlex, "S"+f'{(currSeason+1):02}'+"E01") #Search for next season first episode
+        if result == None:
+            result = searchShowNext(plexuser, showOnPlex, "S"+f'{(nextSeason):02}') # search for whole next season
+        if result == None:
+            result = searchShowNext(plexuser, showOnPlex, str(show.year)) # search for whole shpw
+
+        if result == None:            
+            doLogDebug("Next Episode Not Found, "+show.title + " "+str(show.year) + ", "+tvdb.id+"::: ")
+            #ep = searchShowNext()
+
         else:            
-            doLogDebug("OnPlex, "+show.title + " "+str(show.year)+ ", " + show.type+ ", "+imdb.id+":::  Found On Plex!! ")
+            doLogDebug("Next Episode/Season Found, "+ result[1] + " "+ result[-1] + ", "+tvdb.id+"::: ")
             DEBUG_COUNT['OnPlex'] = DEBUG_COUNT['OnPlex'] + 1 
+
+def searchShowNext(plexuser, show, str):
+    doLogDebug("searchShowNext, "+show.title+": "+str + "::: ")
+    foundObj = None
+    tvdb = list(filter(lambda guid: guid.id.startswith("tvdb:"), show.guids))[0]
+    for engine in plexuser.show_engine_order:
+        for extra in plexuser.show_extra_order:
+            if foundObj is None:
+                url_title = re.sub(r'[\W_]+', ' ', show.title) + " " + str + " " + extra                    
+                url_title = url_title.strip();
+
+                torrent_path = _TORRENT_FILE_PATH+show.type+"/"+re.sub(r'[\W_]+', '', tvdb.id)+"_"+engine+"_" + url_title +""                    
+                
+                #doLog(movie.title + ", "+ url_title + ", " + movie.type+", "+engine+", "+ str(movie.year)+ ", "+imdb.id)                        
+                os.chdir(os.path.dirname(SCRIPT_PATH))
+                proc = subprocess.run( ['pyw', 'nova2.py',  engine, CAT_CONVERT[show.type], url_title], capture_output=True)
+                results = proc.stdout.decode().split("\n")   
+                resultArr = results[0].split("|")
+                if len(resultArr) > 1:
+                    foundObj = resultArr
+                    foundEngine = engine
+                else:
+                    resultArr = ["","","","","","","","","",""]
+    return foundObj
 
 
 def main(args):
@@ -172,7 +238,7 @@ def main(args):
     global _DO_DRYRUN
     _DO_DRYRUN = True if(args["dryrun"]) else False
 
-    for plexuser in PlexAutoTorrentConfig.PLEXUSERS:
+    for plexuser in config.PLEXUSERS:
         DEBUG_COUNT['users'] = DEBUG_COUNT['users'] + 1
         doLogDebug("plexuser: "+ plexuser.username )
         account = MyPlexAccount(plexuser.username, plexuser.password)
@@ -184,10 +250,36 @@ def main(args):
             
         if not args["shipshows"]:
             doLogDebug("shows: "+ plexuser.username )
-            doShows(account.watchlist(filter='released', sort='rating:desc', libtype='show'), plex, plexuser)
+            #doShows(account.watchlist(filter='released', sort='rating:desc', libtype='show'), plex, plexuser)
 
+    if(args["telegramreport"]):
+        sendTelegramReport(json.dumps(TELEGRAM_REPORT)+" \n "+json.dumps(DEBUG_COUNT))
+
+    doLog("telegramreport ::("+json.dumps(TELEGRAM_REPORT)+")")
     doLog("PlexAutoTorrent ::("+json.dumps(DEBUG_COUNT)+"):::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::")
 
+def sendTelegramReport(report):
+    if(DEBUG_COUNT["torrentDownloaded"]+DEBUG_COUNT["magnetDownloaded"] > 0):
+        token = config.TELEGRAM_BOT_TOKEN
+        url = f"https://api.telegram.org/bot{token}"
+        # keyboard = {
+        #     "inline_keyboard": [
+        #         [
+        #             {"text": "Allow", "callback_data": "allow"},
+        #             {"text": "Deny", "callback_data": "deny"}
+        #         ]
+        #     ]
+        # }
+
+        params = {"chat_id": config.TELEGRAM_RAW_ID, 
+                  "text": (report)
+                  #,"reply_markup": json.dumps(keyboard)
+                 }
+                 
+        if not _DO_DRYRUN:    
+            r = requests.get(url + "/sendMessage", params=params)            
+        else:
+            doLogDebug("DRY RUN:  "+url+"url; "+json.dumps(params))
 
 
 def arvToDict(args):
@@ -201,3 +293,11 @@ def arvToDict(args):
 
 if __name__ == "__main__":
     main(arvToDict(argv))
+
+    
+
+        #https://metadata.provider.plex.tv/library/sections/watchlist?X-Plex-Token=uxT7yvhM6M3GVfYG5Tsx
+        #https://metadata.provider.plex.tv/library/metadata/5d9c084fec357c001f9ab4d8/children?X-Plex-Token=uxT7yvhM6M3GVfYG5Tsx
+        #https://metadata.provider.plex.tv/library/metadata/5d9c0a8e02391c001f5a0e98/children?X-Plex-Token=uxT7yvhM6M3GVfYG5Tsx
+        #https://metadata.provider.plex.tv/library/metadata/5d9c09b32192ba001f3210a2/children?X-Plex-Token=uxT7yvhM6M3GVfYG5Tsx
+        #https://metadata.provider.plex.tv/library/metadata/602e649867f4c8002ce3a62d/children?X-Plex-Token=uxT7yvhM6M3GVfYG5Tsx&X-Plex-Container-Size=200
