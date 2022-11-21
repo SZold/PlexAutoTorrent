@@ -1,0 +1,38 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Py Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "DryRun",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["logging","dryrun"],
+            "justMyCode": true
+        },
+        {
+            "name": "Py Nova2",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}\\nova2.py",
+            "args": ["ncoreen","movies", "Any Given Sunday 1999"],
+            "justMyCode": true
+        },
+        {
+            "name": "Py DLNova2",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}\\nova2dl.py",
+            "args": ["https://ncore.pro","https://ncore.pro/torrents.php?action=download&id=3200400&key=44134eaefd97cda72035842e23523c92"],
+            "justMyCode": true
+        }
+    ]
+}
