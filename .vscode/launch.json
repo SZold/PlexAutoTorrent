@@ -15,7 +15,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": ["logging","dryrun"],
+            "args": ["logging","dryrun", "telegramreport"],
             "justMyCode": true
         },
         {

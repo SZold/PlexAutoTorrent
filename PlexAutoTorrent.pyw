@@ -1,5 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
+import traceback
+from PlexAutoTorrentClasses import PatTvShow, TvShowFollowType
 from config import config
 import json
 import os
@@ -12,10 +14,12 @@ import subprocess
 from sys import argv
 import requests
 
-_TORRENT_FILE_PATH = config.TORRENT_FILE_PATH
-_QBITTORRENT_PATH = config.QBITTORRENT_PATH
-_MOVIES_PATH = config.MOVIES_PATH
-_LOG_FILEPATH = os.path.dirname(os.path.realpath(__file__))+'/Logs/Log_'+datetime.utcnow().strftime('%Y%m%d')+'.txt'
+from settings import settings
+
+_TORRENT_FILE_PATH = settings.TORRENT_FILE_PATH
+_QBITTORRENT_PATH = settings.QBITTORRENT_PATH
+_MOVIES_PATH = settings.MOVIES_PATH
+_LOG_FILEPATH = settings.LOG_FILEPATH
 _DO_LOG = False
 _DO_DRYRUN = False
 
@@ -40,9 +44,6 @@ DEBUG_COUNT = {
         "notFound": 0,
         "OnPlex": 0
 }
-
-engine_order = ["ncorehu", "ncoreen", "all"]
-extra_order = ["2160p", "1080p", "720p", ""]
 
 SCRIPT_PATH = os.path.realpath(__file__)
 
@@ -101,6 +102,7 @@ def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
                     else:    
                         DEBUG_COUNT['magnetDownloaded'] = DEBUG_COUNT['magnetDownloaded'] + 1 
                         doLogDebug("DRY RUN:  "+torrent_path+"; "+save_path)
+                        result = torrent_path+".magnet"
                           
                     doLogDebug("Magnet Link:  ")
                 else:  
@@ -122,6 +124,7 @@ def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
                     else:
                         DEBUG_COUNT['torrentDownloaded'] = DEBUG_COUNT['torrentDownloaded'] + 1 
                         doLogDebug("DRY RUN:  "+torrent_path+"; "+save_path)
+                        result = torrent_path+".torrent"
                     #doLog(foundEngine+ ", "+foundObj[1] + ", " + movie.type+ ", "+imdb.id+":::  "+torrent[0]) "--skip-dialog", "true",
     return result
 
@@ -161,7 +164,7 @@ def doMovies(movieList, plexConnection, plexuser):
             if foundObj is not None: 
                 res = doDownloadTorrent(foundObj, torrent_path, _MOVIES_PATH+url_title)                
                 if res is not None:                    
-                    TELEGRAM_REPORT["movies"].append("Added torrent: "+movie.title+" " + str(movie.year) +", "+res)
+                    TELEGRAM_REPORT["movies"].append({"user": plexuser.username, "title": movie.title, "year": movie.year, "torrentpath": res})
             else:
                 doLog(foundEngine+ ", "+movie.title + " " + str(movie.year) +", " + movie.type+ ", "+imdb.id+":::  Not Found! ")
                 DEBUG_COUNT['notFound'] = DEBUG_COUNT['notFound'] + 1 
@@ -171,96 +174,173 @@ def doMovies(movieList, plexConnection, plexuser):
                 
         #doLog("\n\n")
 
+def getTvShowConfigs(show, plexuser):
+    result = PatTvShow( show=show,      
+                        engines=[],
+                        episode_to_download=settings.DEFAULT_EPISODES_TO_DOWNLOAD  ,
+                        unwatched_episode_trigger=settings.DEFAULT_UNWATCHED_EPISODE_TRIGGER,
+                        follow_type=settings.DEFAULT_TVSHOW_FOLLOWTYPE
+                      )
+    for label in show.labels:
+        if label.tag == config.MEDIA_LABEL_EVERY_EPISODE:
+            result.follow_type = TvShowFollowType.All
+        elif label.tag == config.MEDIA_LABEL_SHOW_NEXT_SEASON:
+            result.follow_type = TvShowFollowType.NextSeason
+        elif label.tag == config.MEDIA_LABEL_SHOW_BATCH:
+            result.follow_type = TvShowFollowType.Batch
+        elif label.tag == config.MEDIA_LABEL_SHOW__FORCE:
+            result.force = True
+        elif label.tag.startswith(config.MEDIA_LABEL_SHOW_EPISODES_TO_DOWNLOAD+"="):
+            lb = label.tag.split("=")
+            result.episode_to_download = lb[1]
+        elif label.tag.startswith(config.MEDIA_LABEL_TRIGGER+"="):
+            lb = label.tag.split("=")
+            result.unwatched_episode_trigger = lb[1]
+        elif label.tag.startswith(config.MEDIA_LABEL_ENGINE+"="):
+            lb = label.tag.split("=")
+            result.engines.append(lb[1])
+    if(len(result.engines) == 0):
+        result.engines.append(plexuser.show_engine_order)
+        
+    return result
+
 def doShows(showList, plexConnection, plexuser):
-    for show in showList:
+    result = []
+    for showOnWatchList in showList:
         global DEBUG_COUNT
-        tvdb = list(filter(lambda guid: guid.id.startswith("tvdb:"), show.guids))[0]
-        showOnPlex = plexConnection.library.search(guid=show.guid, libtype=show.type)
-        currEpisode = 0
-        currSeason = 1
-        nextSeason = 1
-        result = None
-
-        if len(showOnPlex) > 0:    
-            showOnPlex = showOnPlex[0]
-            currEpisode = showOnPlex.episodes()[-1].episodeNumber
-            currSeason = showOnPlex.episodes()[-1].seasonNumber
-            nextSeason = currSeason+1
+        showOnServer = plexConnection.library.search(guid=showOnWatchList.guid, libtype='show')
+        unwatchedCount = -1
+        episodeToDownload = []
+        isShowOnServer = False
+        
+        if len(showOnServer) != 0:
+            isShowOnServer = True
+            show = showOnServer[0]
+            collectedEpisodeList = show.episodes()
+            collectedSeasonEpisodeList = list(map(lambda ep: {"s": ep.seasonNumber, "e": ep.episodeNumber}, collectedEpisodeList))            
         else:
-            showOnPlex = show
+            isShowOnServer = False
+            show = showOnWatchList
+            collectedEpisodeList = []
+            collectedSeasonEpisodeList = []
+        
+        tvshowConfig = getTvShowConfigs(show, plexuser)
 
-        result = searchShowNext(plexuser, showOnPlex, "S"+f'{currSeason:02}'+"E"+f'{(currEpisode+1):02}')   #Search for next episode
-        if result == None:
-            result = searchShowNext(plexuser, showOnPlex, "S"+f'{(currSeason+1):02}'+"E01") #Search for next season first episode
-        if result == None:
-            result = searchShowNext(plexuser, showOnPlex, "S"+f'{(nextSeason):02}') # search for whole next season
-        if result == None:
-            result = searchShowNext(plexuser, showOnPlex, str(show.year)) # search for whole shpw
+        isShowOnPlexMetadata = False
+        try:
+            metadataEpisodeList = getPlexMetadataEpisodeList(plexuser, show)
+            isShowOnPlexMetadata = True
+        except:
+            isShowOnPlexMetadata = False
+            tvshowConfig.force = True
+            metadataEpisodeList = []
+            
+        unwatchedList = list(filter(lambda ep: not ep.isPlayed, collectedEpisodeList))
+        unwatchedCount = len(unwatchedList)
+            
+        if isShowOnPlexMetadata:
+            nonCollectedSeasonEpisodeList = list(filter(lambda ep: {"s": ep.seasonNumber, "e": ep.episodeNumber} not in collectedSeasonEpisodeList, metadataEpisodeList))
+        else:
+            nonCollectedSeasonEpisodeList = []
 
-        if result == None:            
-            doLogDebug("Next Episode Not Found, "+show.title + " "+str(show.year) + ", "+tvdb.id+"::: ")
-            #ep = searchShowNext()
+        episodeToDownload = getNextEpisodesList(tvshowConfig, collectedSeasonEpisodeList, list(map(lambda ep: {"s": ep.seasonNumber, "e": ep.episodeNumber}, nonCollectedSeasonEpisodeList)))
 
-        else:            
-            doLogDebug("Next Episode/Season Found, "+ result[1] + " "+ result[-1] + ", "+tvdb.id+"::: ")
-            DEBUG_COUNT['OnPlex'] = DEBUG_COUNT['OnPlex'] + 1 
+        if((unwatchedCount < tvshowConfig.unwatched_episode_trigger) and (len(episodeToDownload) > 0)):
+            doLog("DO   ::"+showOnWatchList.title+": "+ str(unwatchedCount)+ ' || '+ str(len(nonCollectedSeasonEpisodeList)) + " < "+str(tvshowConfig.unwatched_episode_trigger)+" :: "+json.dumps(episodeToDownload)+ " :: "+json.dumps(tvshowConfig.engines))
+        elif(tvshowConfig.force):
+            doLogDebug("FORCE::"+showOnWatchList.title+"(metadata:"+str(isShowOnPlexMetadata)+") is forced download"+ " :: "+json.dumps(tvshowConfig.engines) )
+        else:
+            doLogDebug("NOT  ::"+showOnWatchList.title+": "+ str(unwatchedCount)+ ' && '+ str(len(nonCollectedSeasonEpisodeList)) + " >= "+str(tvshowConfig.unwatched_episode_trigger)+" :: "+str(len(episodeToDownload)))
+        
+        result.append({"tvshowConfig": tvshowConfig, "episodeToDownload": episodeToDownload})
 
-def searchShowNext(plexuser, show, str):
-    doLogDebug("searchShowNext, "+show.title+": "+str + "::: ")
-    foundObj = None
-    tvdb = list(filter(lambda guid: guid.id.startswith("tvdb:"), show.guids))[0]
-    for engine in plexuser.show_engine_order:
-        for extra in plexuser.show_extra_order:
-            if foundObj is None:
-                url_title = re.sub(r'[\W_]+', ' ', show.title) + " " + str + " " + extra                    
-                url_title = url_title.strip();
+def getNextEpisodesList(tvshowConfig, collectedSeasonEpisodeList, nonCollectedSeasonEpisodeList):
+    result = []
+    if(not tvshowConfig.force):
+        match tvshowConfig.follow_type:
+            case TvShowFollowType.NextSeason:  
+                if(len(collectedSeasonEpisodeList) > 1):   
+                    for ncEP in nonCollectedSeasonEpisodeList:
+                        if(ncEP["s"] == collectedSeasonEpisodeList[-1]["s"] and ncEP["e"] > collectedSeasonEpisodeList[-1]["e"]) or (ncEP["s"] == collectedSeasonEpisodeList[-1]["s"]+1):
+                            result.append(ncEP)  
+                else:  
+                    for ncEP in nonCollectedSeasonEpisodeList:
+                            if(ncEP["s"] == 1):
+                                result.append(ncEP)    
+            case TvShowFollowType.All: 
+                result = nonCollectedSeasonEpisodeList  
+            case TvShowFollowType.Batch: 
+                result = nonCollectedSeasonEpisodeList[0: tvshowConfig.episode_to_download]
+            case _:
+                result = nonCollectedSeasonEpisodeList[0: tvshowConfig.episode_to_download]
 
-                torrent_path = _TORRENT_FILE_PATH+show.type+"/"+re.sub(r'[\W_]+', '', tvdb.id)+"_"+engine+"_" + url_title +""                    
-                
-                #doLog(movie.title + ", "+ url_title + ", " + movie.type+", "+engine+", "+ str(movie.year)+ ", "+imdb.id)                        
-                os.chdir(os.path.dirname(SCRIPT_PATH))
-                proc = subprocess.run( ['pyw', 'nova2.py',  engine, CAT_CONVERT[show.type], url_title], capture_output=True)
-                results = proc.stdout.decode().split("\n")   
-                resultArr = results[0].split("|")
-                if len(resultArr) > 1:
-                    foundObj = resultArr
-                    foundEngine = engine
-                else:
-                    resultArr = ["","","","","","","","","",""]
-    return foundObj
+    if(tvshowConfig.episode_to_download >= 0):
+        result = nonCollectedSeasonEpisodeList[0: tvshowConfig.episode_to_download]
 
+    return result
+
+def getPlexMetadataEpisodeList(plexuser, show):
+    result = []
+    params = {}
+    #params['X-Plex-Token'] = plexuser.account._token
+    params['X-Plex-Container-Start'] = 0
+    params['X-Plex-Container-Size'] = config.PLEX_CONTAINER_SIZE
+
+    showGUID = show.guid.replace("plex://show/", "")
+    sURL = f'{plexuser.account.METADATA}/library/metadata/{showGUID}/children'
+    try:
+        mdShowXML =  plexuser.account.query(sURL, params=params)
+    except Exception:
+        doLog(f'ERROR: metadata not found for show ({sURL})')
+    
+    for season in plexuser.account.findItems(mdShowXML):
+        if not (season.seasonNumber == 0 and config.SKIP_SPECIALS):
+            seasonGUID = season.guid.replace("plex://season/", "")
+            epURL = f'{plexuser.account.METADATA}/library/metadata/{seasonGUID}/children'
+            try:
+                mdSeasonXML =  plexuser.account.query(epURL, params=params)      
+            except Exception:
+                doLog(f'ERROR: metadata not found for season ({epURL})')    
+
+            for episode in plexuser.account.findItems(mdSeasonXML):
+                result.append(episode)
+    return result
 
 def main(args):
-    doLogDebug("Running PlexAutoTorrent "+json.dumps(args)+":::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::")    
-    global DEBUG_COUNT
-    global _DO_LOG
-    _DO_LOG = True if(args["logging"]) else False
-    global _DO_DRYRUN
-    _DO_DRYRUN = True if(args["dryrun"]) else False
+    try:
+        doLogDebug("Running PlexAutoTorrent "+json.dumps(args)+":::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::")    
+        global DEBUG_COUNT
+        global _DO_LOG
+        _DO_LOG = True if(args["logging"]) else False
+        global _DO_DRYRUN
+        _DO_DRYRUN = True if(args["dryrun"]) else False
 
-    for plexuser in config.PLEXUSERS:
-        DEBUG_COUNT['users'] = DEBUG_COUNT['users'] + 1
-        doLogDebug("plexuser: "+ plexuser.username )
-        account = MyPlexAccount(plexuser.username, plexuser.password)
-        plex = account.resource(plexuser.servername).connect()  # returns a PlexServer instance 
+        for plexuser in settings.PLEXUSERS:
+            DEBUG_COUNT['users'] = DEBUG_COUNT['users'] + 1
+            doLogDebug("plexuser: "+ plexuser.username )
+            plexuser.account = MyPlexAccount(plexuser.username, plexuser.password)
+            plex = plexuser.account.resource(plexuser.servername).connect()  # returns a PlexServer instance 
 
-        if not args["skipmovies"]:
-             doLogDebug("movies: "+ plexuser.username )
-             doMovies(account.watchlist(filter='released', sort='rating:desc', libtype='movie'), plex, plexuser)
-            
-        if not args["shipshows"]:
-            doLogDebug("shows: "+ plexuser.username )
-            #doShows(account.watchlist(filter='released', sort='rating:desc', libtype='show'), plex, plexuser)
+            if not args["skipmovies"]:
+                doLogDebug("movies: "+ plexuser.username )
+                #doMovies(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='movie'), plex, plexuser)
+                
+            if not args["shipshows"]:
+                doLogDebug("shows: "+ plexuser.username )
+                doShows(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='show'), plex, plexuser)
 
-    if(args["telegramreport"]):
-        sendTelegramReport(json.dumps(TELEGRAM_REPORT)+" \n "+json.dumps(DEBUG_COUNT))
+        if(args["telegramreport"]):
+            sendTelegramReport(json.dumps(TELEGRAM_REPORT)+" \n "+json.dumps(DEBUG_COUNT))
 
-    doLog("telegramreport ::("+json.dumps(TELEGRAM_REPORT)+")")
-    doLog("PlexAutoTorrent ::("+json.dumps(DEBUG_COUNT)+"):::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::")
+        doLog("telegramreport ::("+json.dumps(TELEGRAM_REPORT)+")")
+        doLog("PlexAutoTorrent ::("+json.dumps(DEBUG_COUNT)+"):::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::")    
+    except Exception:
+        doLog(traceback.format_exc())
+        return False
 
 def sendTelegramReport(report):
     if(DEBUG_COUNT["torrentDownloaded"]+DEBUG_COUNT["magnetDownloaded"] > 0):
-        token = config.TELEGRAM_BOT_TOKEN
+        token = settings.TELEGRAM_BOT_TOKEN
         url = f"https://api.telegram.org/bot{token}"
         # keyboard = {
         #     "inline_keyboard": [
@@ -271,7 +351,7 @@ def sendTelegramReport(report):
         #     ]
         # }
 
-        params = {"chat_id": config.TELEGRAM_RAW_ID, 
+        params = {"chat_id": settings.TELEGRAM_RAW_ID, 
                   "text": (report)
                   #,"reply_markup": json.dumps(keyboard)
                  }
@@ -294,7 +374,11 @@ def arvToDict(args):
 if __name__ == "__main__":
     main(arvToDict(argv))
 
-    
+
+class Object:
+    def toJSON(self):
+        return json.dumps(self, default=lambda o: o.__dict__, 
+            sort_keys=True, indent=4)    
 
         #https://metadata.provider.plex.tv/library/sections/watchlist?X-Plex-Token=uxT7yvhM6M3GVfYG5Tsx
         #https://metadata.provider.plex.tv/library/metadata/5d9c084fec357c001f9ab4d8/children?X-Plex-Token=uxT7yvhM6M3GVfYG5Tsx

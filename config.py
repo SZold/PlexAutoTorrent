@@ -1,32 +1,25 @@
 from datetime import datetime
+from settings import settings
+from PlexAutoTorrentClasses import PatTvShow, PatUser, TvShowFollowType
 import os
-
-class PlexATUser:
-    username = ""
-    password = ""
-    servername = ""
-    movie_engine_order = []
-    movie_extra_order = []
-    show_engine_order = []
-    show_extra_order = []
-    
-    def __init__(self, p_username, p_password, p_servername, p_movie_engine_order, p_movie_extra_order, p_show_engine_order, p_show_extra_order):
-        self.username = p_username
-        self.password = p_password
-        self.servername = p_servername
-        self.movie_engine_order = p_movie_engine_order
-        self.movie_extra_order = p_movie_extra_order
-        self.show_engine_order = p_show_engine_order
-        self.show_extra_order = p_show_extra_order
-
 
 
 class config():
-    TORRENT_FILE_PATH = "C:/torrents/PlexAutoTorrent/"
-    QBITTORRENT_PATH = 'C:/Program Files/qbittorrent.exe'
-    MOVIES_PATH = 'C:/Movies/'
-    LOG_FILEPATH = os.path.dirname(os.path.realpath(__file__))+'/Logs/Log_'+datetime.utcnow().strftime('%Y%m%d')+'.txt'
-    TELEGRAM_BOT_TOKEN = ""
-    TELEGRAM_RAW_ID = ""
+    #####
+    PLEX_METADATA_URL = "https://metadata.provider.plex.tv/"
+    PLEX_CONTAINER_SIZE = 200
     
-    PLEXUSERS = [PlexATUser("Username", "password", "Servername", ["torrentengine1", "torrentengine2", "all"],  ["2160p", "1080p", "720p", ""])]
+    #####
+    ENGINE_ID_SOURCE = "imdb"#
+
+    CHECK_DESCRIPTION_FOR_GUIDS = False 
+    SKIP_SPECIALS = True 
+
+    MEDIA_LABEL_SKIP = "PlexAutoTorrent__Skip"
+    MEDIA_LABEL_SHOW_BATCH = "PlexAutoTorrent__TvShow_FollowBatch"
+    MEDIA_LABEL_SHOW_NEXT_SEASON = "PlexAutoTorrent__TvShow_FollowNextSeason"
+    MEDIA_LABEL_EVERY_EPISODE = "PlexAutoTorrent__TvShow_FollowEveryEpisode"
+    MEDIA_LABEL_SHOW_EPISODES_TO_DOWNLOAD = "PlexAutoTorrent__TvShow_Episodes_To_Download"# Example: "config.MEDIA_LABEL_SHOW_EPISODES_TO_DOWNLOAD=10"
+    MEDIA_LABEL_TRIGGER = "PlexAutoTorrent__TvShow_Trigger"# Example: "config.PlexAutoTorrent__TvShow_Trigger=5"
+    MEDIA_LABEL_ENGINE = "PlexAutoTorrent__TvShow_Engine"
+    MEDIA_LABEL_SHOW__FORCE = "PlexAutoTorrent__TvShow_FORCE" #Override the episode list of PlexMetadata, force try next episodes based on season and episode number
