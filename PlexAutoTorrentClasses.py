@@ -33,6 +33,7 @@ class PatTvShow:
     follow_type = TvShowFollowType.NextSeason
     engines = []
     force = False
+    skip = False
     unwatched_episode_trigger = 0
 
     def __init__(self, show=None, title="", episode_to_download=0, engines=["all"], force=False, unwatched_episode_trigger = 0, follow_type = TvShowFollowType.NextSeason):

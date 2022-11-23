@@ -155,6 +155,7 @@ def doMovies(movieList, plexConnection, plexuser):
                         proc = subprocess.run( ['pyw', 'nova2.py',  engine, CAT_CONVERT[movie.type], url_title], capture_output=True)
                         results = proc.stdout.decode().split("\n")   
                         resultArr = results[0].split("|")
+                        #TODO: Check For extras here instead of new query for each
                         if len(resultArr) > 1:
                             foundObj = resultArr
                             foundEngine = engine
@@ -190,6 +191,8 @@ def getTvShowConfigs(show, plexuser):
             result.follow_type = TvShowFollowType.Batch
         elif label.tag == config.MEDIA_LABEL_SHOW__FORCE:
             result.force = True
+        elif label.tag == config.MEDIA_LABEL_SKIP:
+            result.skip = True
         elif label.tag.startswith(config.MEDIA_LABEL_SHOW_EPISODES_TO_DOWNLOAD+"="):
             lb = label.tag.split("=")
             result.episode_to_download = lb[1]
@@ -206,6 +209,8 @@ def getTvShowConfigs(show, plexuser):
 
 def doShows(showList, plexConnection, plexuser):
     result = []
+    if(settings.FOLLOW_EVERY_SHOW_IN_LIBRARY):
+        showList = plexConnection.library.section('TV Shows').search("")
     for showOnWatchList in showList:
         global DEBUG_COUNT
         showOnServer = plexConnection.library.search(guid=showOnWatchList.guid, libtype='show')
@@ -224,15 +229,18 @@ def doShows(showList, plexConnection, plexuser):
             collectedEpisodeList = []
             collectedSeasonEpisodeList = []
         
-        tvshowConfig = getTvShowConfigs(show, plexuser)
-
+        tvshowConfig = getTvShowConfigs(show, plexuser)        
+        
         isShowOnPlexMetadata = False
         try:
             metadataEpisodeList = getPlexMetadataEpisodeList(plexuser, show)
             isShowOnPlexMetadata = True
         except:
-            isShowOnPlexMetadata = False
-            tvshowConfig.force = True
+            isShowOnPlexMetadata = False            
+            if(not settings.FOLLOW_EVERY_SHOW_IN_LIBRARY):
+                tvshowConfig.force = True
+            else:
+                tvshowConfig.skip = True
             metadataEpisodeList = []
             
         unwatchedList = list(filter(lambda ep: not ep.isPlayed, collectedEpisodeList))
@@ -244,11 +252,12 @@ def doShows(showList, plexConnection, plexuser):
             nonCollectedSeasonEpisodeList = []
 
         episodeToDownload = getNextEpisodesList(tvshowConfig, collectedSeasonEpisodeList, list(map(lambda ep: {"s": ep.seasonNumber, "e": ep.episodeNumber}, nonCollectedSeasonEpisodeList)))
-
-        if((unwatchedCount < tvshowConfig.unwatched_episode_trigger) and (len(episodeToDownload) > 0)):
+        if(tvshowConfig.skip):
+            doLogDebug("SKIP ::"+showOnWatchList.title+"(metadata:"+str(isShowOnPlexMetadata)+") is skipped"+ " :: ")
+        elif((unwatchedCount < tvshowConfig.unwatched_episode_trigger) and (len(episodeToDownload) > 0)):
             doLog("DO   ::"+showOnWatchList.title+": "+ str(unwatchedCount)+ ' || '+ str(len(nonCollectedSeasonEpisodeList)) + " < "+str(tvshowConfig.unwatched_episode_trigger)+" :: "+json.dumps(episodeToDownload)+ " :: "+json.dumps(tvshowConfig.engines))
         elif(tvshowConfig.force):
-            doLogDebug("FORCE::"+showOnWatchList.title+"(metadata:"+str(isShowOnPlexMetadata)+") is forced download"+ " :: "+json.dumps(tvshowConfig.engines) )
+            doLog("FORCE::"+showOnWatchList.title+"(metadata:"+str(isShowOnPlexMetadata)+") is forced download"+ " :: "+json.dumps(tvshowConfig.engines) )
         else:
             doLogDebug("NOT  ::"+showOnWatchList.title+": "+ str(unwatchedCount)+ ' && '+ str(len(nonCollectedSeasonEpisodeList)) + " >= "+str(tvshowConfig.unwatched_episode_trigger)+" :: "+str(len(episodeToDownload)))
         
@@ -275,7 +284,7 @@ def getNextEpisodesList(tvshowConfig, collectedSeasonEpisodeList, nonCollectedSe
                 result = nonCollectedSeasonEpisodeList[0: tvshowConfig.episode_to_download]
 
     if(tvshowConfig.episode_to_download >= 0):
-        result = nonCollectedSeasonEpisodeList[0: tvshowConfig.episode_to_download]
+        result = result[0: tvshowConfig.episode_to_download]
 
     return result
 
@@ -286,24 +295,25 @@ def getPlexMetadataEpisodeList(plexuser, show):
     params['X-Plex-Container-Start'] = 0
     params['X-Plex-Container-Size'] = config.PLEX_CONTAINER_SIZE
 
-    showGUID = show.guid.replace("plex://show/", "")
-    sURL = f'{plexuser.account.METADATA}/library/metadata/{showGUID}/children'
-    try:
-        mdShowXML =  plexuser.account.query(sURL, params=params)
-    except Exception:
-        doLog(f'ERROR: metadata not found for show ({sURL})')
-    
-    for season in plexuser.account.findItems(mdShowXML):
-        if not (season.seasonNumber == 0 and config.SKIP_SPECIALS):
-            seasonGUID = season.guid.replace("plex://season/", "")
-            epURL = f'{plexuser.account.METADATA}/library/metadata/{seasonGUID}/children'
-            try:
-                mdSeasonXML =  plexuser.account.query(epURL, params=params)      
-            except Exception:
-                doLog(f'ERROR: metadata not found for season ({epURL})')    
+    if(show.guid.startswith("plex://show/")):
+        try:
+            showGUID = show.guid.split("/")[-1]
+            sURL = f'{plexuser.account.METADATA}/library/metadata/{showGUID}/children'
+            mdShowXML =  plexuser.account.query(sURL, params=params)
+        except Exception:
+            doLog(f'ERROR: metadata not found for show {show.title} ({sURL})')
+        
+        for season in plexuser.account.findItems(mdShowXML):
+            if not (season.seasonNumber == 0 and config.SKIP_SPECIALS):
+                seasonGUID = season.guid.replace("plex://season/", "")
+                epURL = f'{plexuser.account.METADATA}/library/metadata/{seasonGUID}/children'
+                try:
+                    mdSeasonXML =  plexuser.account.query(epURL, params=params)      
+                except Exception:
+                    doLog(f'ERROR: metadata not found for season ({epURL})')    
 
-            for episode in plexuser.account.findItems(mdSeasonXML):
-                result.append(episode)
+                for episode in plexuser.account.findItems(mdSeasonXML):
+                    result.append(episode)
     return result
 
 def main(args):

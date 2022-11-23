@@ -23,6 +23,7 @@ class settings():
     ]    
 
     #####
-    DEFAULT_TVSHOW_FOLLOWTYPE = TvShowFollowType.NextSeason
-    DEFAULT_UNWATCHED_EPISODE_TRIGGER = 3
-    DEFAULT_EPISODES_TO_DOWNLOAD = 5 #How many episodes to download; -1 to download all episodes based on the follow_type
+    FOLLOW_EVERY_SHOW_IN_LIBRARY = False #If True every show is going to be followed not just the ones in a user library; Default: False
+    DEFAULT_TVSHOW_FOLLOWTYPE = TvShowFollowType.NextSeason # Default: TvShowFollowType.NextSeason
+    DEFAULT_UNWATCHED_EPISODE_TRIGGER = 3 # Default: 3
+    DEFAULT_EPISODES_TO_DOWNLOAD = 5 #How many episodes to download; -1 to download all episodes based on the follow_type # Default: 5
