@@ -160,20 +160,23 @@ def doMovies(movieList, plexConnection, plexuser):
             for engine in plexuser.movie_engine_order:
                 for extra in plexuser.movie_extra_order:
                     if foundObj is None:
-                        torrent_path = _TORRENT_FILE_PATH+movie.type+"/"+re.sub(r'[\W_]+', '', imdb)+"_"+engine+"_" + url_title +""                    
+                        torrent_path = _TORRENT_FILE_PATH+movie.type+"/"+re.sub(r'[\W_]+', '', imdb)+"_"+engine.id+"_" + url_title +""                    
                         
-                        url_title = toPlainStr(movie.title) + " " + str(movie.year) + " " + extra     
+                        url_title = toPlainStr(movie.title)   
+                        if(imdb == config.ENGINE_EXTRA_EMPTY):   
+                            url_title = url_title + " " + str(movie.year)  
+                        url_title = url_title + " " + extra  
 
-                        #doLog(movie.title + ", "+ url_title + ", " + movie.type+", "+engine+", "+ str(movie.year)+ ", "+imdb)                        
+                        #doLog(movie.title + ", "+ url_title + ", " + movie.type+", "+engine.id+", "+ str(movie.year)+ ", "+imdb)                        
                         os.chdir(os.path.dirname(SCRIPT_PATH))                        
                         #proc = subprocess.run( ['pyw', 'nova2.py',  engine, CAT_CONVERT[movie.type], url_title], capture_output=True)
-                        proc = doTorrentSearch(engine, url_title, CAT_CONVERT[movie.type], imdb)
+                        proc = doTorrentSearch(engine.id, url_title.replace(" ", "."), CAT_CONVERT[movie.type], imdb)
                         results = proc.stdout.decode().split("\n")   
                         resultArr = results[0].split("|")
                         #TODO: Check For extras here instead of new query for each
                         if len(resultArr) > 1:
                             foundObj = resultArr
-                            foundEngine = engine
+                            foundEngine = engine.id
                         else:
                             resultArr = ["","","","","","","","","",""]
             
@@ -472,7 +475,7 @@ def main(args):
             se = ("S{S:02}").format(S = torrent["seasonEpisode"]["s"])
             if("e" in torrent["seasonEpisode"]):
                 se = se + ("E{E:02}").format(E = torrent["seasonEpisode"]["e"])
-            torrent_path = _TORRENT_FILE_PATH+torrent["show"].type+"/"+ url_title +" ("+toPlainStr(torrent["imdb"])+")/"+url_title+" "+se+torrent["extra"]
+            torrent_path = _TORRENT_FILE_PATH+torrent["show"].type+"/"+ url_title +" ("+toPlainStr(torrent["imdb"])+")/"+url_title+"_"+se+"_"+torrent["extra"]
             save_path = _SHOWS_PATH + torrent["folder"]
 
             if not os.path.exists(torrent_path+"*"):
