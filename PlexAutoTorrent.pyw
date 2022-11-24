@@ -64,13 +64,16 @@ def doLogDebug(string):
     a = ""
 
 def doLog(string):    
-    if(_DO_LOG):
-        txt = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')+" :: " + string + "\n"
-        os.makedirs(os.path.dirname(_LOG_FILEPATH), exist_ok=True)
-        f= open(_LOG_FILEPATH,"a")
-        f.write(txt)
-        print(txt)
-        f.close()
+    try:
+        if(_DO_LOG and _LOG_FILEPATH != ''):
+            txt = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')+" :: " + string + "\n"
+            os.makedirs(os.path.dirname(_LOG_FILEPATH), exist_ok=True)
+            f= open(_LOG_FILEPATH,"a")
+            f.write(txt)
+            print(txt)
+            f.close()
+    except:
+        print(string)
 
 def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
     result = None
@@ -478,7 +481,7 @@ def main(args):
             torrent_path = _TORRENT_FILE_PATH+torrent["show"].type+"/"+ url_title +" ("+toPlainStr(torrent["imdb"])+")/"+url_title+"_"+se+"_"+torrent["extra"]
             save_path = _SHOWS_PATH + torrent["folder"]
 
-            if not os.path.exists(torrent_path+"*"):
+            if not os.path.exists(torrent_path+".torrent") and not os.path.exists(torrent_path+".magnet"):
                 res = doDownloadTorrent(torrent["torrent"], torrent_path, save_path)                
                 if res is not None:                    
                     TELEGRAM_REPORT["shows"].append({"url_title": url_title, "seasonEpisode": torrent["seasonEpisode"]})
