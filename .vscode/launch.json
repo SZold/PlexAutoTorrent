@@ -23,7 +23,7 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}\\nova2.py",
-            "args": ["ncoreen","movies", "Any Given Sunday 1999"],
+            "args": ["ncorehu","tv", "tt23752726", "A Király" ],
             "justMyCode": true
         },
         {

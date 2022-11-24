@@ -11,6 +11,9 @@ class config():
     
     #####
     ENGINE_ID_SOURCE = "imdb"#
+    ENGINE_EXTRA_EMPTY = "."
+
+
 
     CHECK_DESCRIPTION_FOR_GUIDS = False 
     SKIP_SPECIALS = True 
@@ -21,5 +24,7 @@ class config():
     MEDIA_LABEL_EVERY_EPISODE = "PlexAutoTorrent__TvShow_FollowEveryEpisode"
     MEDIA_LABEL_SHOW_EPISODES_TO_DOWNLOAD = "PlexAutoTorrent__TvShow_Episodes_To_Download"# Example: "config.MEDIA_LABEL_SHOW_EPISODES_TO_DOWNLOAD=10"
     MEDIA_LABEL_TRIGGER = "PlexAutoTorrent__TvShow_Trigger"# Example: "config.PlexAutoTorrent__TvShow_Trigger=5"
-    MEDIA_LABEL_ENGINE = "PlexAutoTorrent__TvShow_Engine"
+    MEDIA_LABEL_ENGINE = "PlexAutoTorrent__TvShow_Engine"# Example: "config.PlexAutoTorrent__TvShow_Engine=ncorehu"
+    MEDIA_LABEL_EXTRA = "PlexAutoTorrent__TvShow_Extra"# Example: "config.PlexAutoTorrent__TvShow_Extra=2160p"
+    MEDIA_LABEL_IMDB = "PlexAutoTorrent__IMDB"# Example: "config.PlexAutoTorrent__IMDB=tt23752726"
     MEDIA_LABEL_SHOW__FORCE = "PlexAutoTorrent__TvShow_FORCE" #Override the episode list of PlexMetadata, force try next episodes based on season and episode number

@@ -129,12 +129,14 @@ def run_search(engine_list):
         @retval False if any exceptions occurred
         @retval True  otherwise
     """
-    engine, what, cat = engine_list
+    engine, what, cat, extra = engine_list
     try:
         engine = engine()
         # avoid exceptions due to invalid category
         if hasattr(engine, 'supported_categories'):
             if cat in engine.supported_categories:
+                if hasattr(engine, 'extra') and extra != ".":
+                    engine.extra = extra
                 engine.search(what, cat)
         else:
             engine.search(what)
@@ -156,7 +158,7 @@ def main(args):
         displayCapabilities(supported_engines)
         return
 
-    elif len(args) < 3:
+    elif len(args) < 4:
         raise SystemExit("./nova2.py [all|engine1[,engine2]*] <category> <keywords>\n"
                          "available engines: %s" % (','.join(supported_engines)))
 
@@ -175,18 +177,19 @@ def main(args):
         return
 
     cat = args[1].lower()
+    extra = args[2].lower()
 
     if cat not in CATEGORIES:
         raise SystemExit(" - ".join(('Invalid category', cat)))
 
-    what = urllib.parse.quote(' '.join(args[2:]))
+    what = urllib.parse.quote(" ".join(args[3:]))
     if THREADED:
         # child process spawning is controlled min(number of searches, number of cpu)
         with Pool(min(len(engines_list), MAX_THREADS)) as pool:
-            pool.map(run_search, ([globals()[engine], what, cat] for engine in engines_list))
+            pool.map(run_search, ([globals()[engine], what, cat, extra] for engine in engines_list))
     else:
         # py3 note: map is needed to be evaluated for content to be executed
-        all(map(run_search, ([globals()[engine], what, cat] for engine in engines_list)))
+        all(map(run_search, ([globals()[engine], what, cat, extra] for engine in engines_list)))
 
 
 if __name__ == "__main__":

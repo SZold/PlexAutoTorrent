@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
 import traceback
-from PlexAutoTorrentClasses import PatTvShow, TvShowFollowType
+from PlexAutoTorrentClasses import Engine, PatTvShow, TvShowFollowType
 from config import config
 import json
 import os
@@ -19,6 +19,7 @@ from settings import settings
 _TORRENT_FILE_PATH = settings.TORRENT_FILE_PATH
 _QBITTORRENT_PATH = settings.QBITTORRENT_PATH
 _MOVIES_PATH = settings.MOVIES_PATH
+_SHOWS_PATH = settings.SHOWS_PATH
 _LOG_FILEPATH = settings.LOG_FILEPATH
 _DO_LOG = False
 _DO_DRYRUN = False
@@ -125,18 +126,31 @@ def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
                         DEBUG_COUNT['torrentDownloaded'] = DEBUG_COUNT['torrentDownloaded'] + 1 
                         doLogDebug("DRY RUN:  "+torrent_path+"; "+save_path)
                         result = torrent_path+".torrent"
-                    #doLog(foundEngine+ ", "+foundObj[1] + ", " + movie.type+ ", "+imdb.id+":::  "+torrent[0]) "--skip-dialog", "true",
+                    #doLog(foundEngine+ ", "+foundObj[1] + ", " + movie.type+ ", "+imdb+":::  "+torrent[0]) "--skip-dialog", "true",
     return result
 
+def doTorrentSearch(engine, title, category, extraData):
+    if extraData == "":
+        extraData = config.ENGINE_EXTRA_EMPTY
+    proc = subprocess.run( ['pyw', 'nova2.py',  engine, category, extraData, title], capture_output=True)
+    return proc
 
+def toPlainStr(str):
+    url_title = re.sub(r'[\W_]+', ' ', str)                     
+    return url_title.strip();
 
 def doMovies(movieList, plexConnection, plexuser):
     for movie in movieList:
         global DEBUG_COUNT
         DEBUG_COUNT['movie'] = DEBUG_COUNT['movie'] + 1
-        imdb = list(filter(lambda guid: guid.id.startswith("imdb:"), movie.guids))[0]
+        imdb = list(filter(lambda guid: guid.id.startswith("imdb:"), movie.guids))        
+        if(len(imdb) > 0):
+            imdb = imdb[0].id.replace('imdb://', '')
+        else:
+            imdb = config.ENGINE_EXTRA_EMPTY
+
         url_title = re.sub(r'[\W_]+', ' ', movie.title) + " " + str(movie.year) 
-        torrent_path =  _TORRENT_FILE_PATH+"/"+movie.type+"/"+re.sub(r'[\W_]+', '', imdb.id)+"_" + url_title +""
+        torrent_path =  _TORRENT_FILE_PATH+"/"+movie.type+"/"+re.sub(r'[\W_]+', '', imdb)+"_" + url_title +""
 
         movieOnPlex = plexConnection.library.search(guid=movie.guid, libtype=movie.type)
 
@@ -146,13 +160,14 @@ def doMovies(movieList, plexConnection, plexuser):
             for engine in plexuser.movie_engine_order:
                 for extra in plexuser.movie_extra_order:
                     if foundObj is None:
-                        torrent_path = _TORRENT_FILE_PATH+movie.type+"/"+re.sub(r'[\W_]+', '', imdb.id)+"_"+engine+"_" + url_title +""                    
+                        torrent_path = _TORRENT_FILE_PATH+movie.type+"/"+re.sub(r'[\W_]+', '', imdb)+"_"+engine+"_" + url_title +""                    
                         
-                        url_title = re.sub(r'[\W_]+', ' ', movie.title) + " " + str(movie.year) + " " + extra                    
-                        url_title = url_title.strip();
-                        #doLog(movie.title + ", "+ url_title + ", " + movie.type+", "+engine+", "+ str(movie.year)+ ", "+imdb.id)                        
-                        os.chdir(os.path.dirname(SCRIPT_PATH))
-                        proc = subprocess.run( ['pyw', 'nova2.py',  engine, CAT_CONVERT[movie.type], url_title], capture_output=True)
+                        url_title = toPlainStr(movie.title) + " " + str(movie.year) + " " + extra     
+
+                        #doLog(movie.title + ", "+ url_title + ", " + movie.type+", "+engine+", "+ str(movie.year)+ ", "+imdb)                        
+                        os.chdir(os.path.dirname(SCRIPT_PATH))                        
+                        #proc = subprocess.run( ['pyw', 'nova2.py',  engine, CAT_CONVERT[movie.type], url_title], capture_output=True)
+                        proc = doTorrentSearch(engine, url_title, CAT_CONVERT[movie.type], imdb)
                         results = proc.stdout.decode().split("\n")   
                         resultArr = results[0].split("|")
                         #TODO: Check For extras here instead of new query for each
@@ -167,17 +182,16 @@ def doMovies(movieList, plexConnection, plexuser):
                 if res is not None:                    
                     TELEGRAM_REPORT["movies"].append({"user": plexuser.username, "title": movie.title, "year": movie.year, "torrentpath": res})
             else:
-                doLog(foundEngine+ ", "+movie.title + " " + str(movie.year) +", " + movie.type+ ", "+imdb.id+":::  Not Found! ")
+                doLog(foundEngine+ ", "+movie.title + " " + str(movie.year) +", " + movie.type+ ", "+imdb+":::  Not Found! ")
                 DEBUG_COUNT['notFound'] = DEBUG_COUNT['notFound'] + 1 
         else:            
-            doLogDebug("OnPlex, "+movie.title + " "+str(movie.year)+ ", " + movie.type+ ", "+imdb.id+":::  Found On Plex!! ")
+            doLogDebug("OnPlex, "+movie.title + " "+str(movie.year)+ ", " + movie.type+ ", "+imdb+":::  Found On Plex!! ")
             DEBUG_COUNT['OnPlex'] = DEBUG_COUNT['OnPlex'] + 1 
                 
         #doLog("\n\n")
 
 def getTvShowConfigs(show, plexuser):
     result = PatTvShow( show=show,      
-                        engines=[],
                         episode_to_download=settings.DEFAULT_EPISODES_TO_DOWNLOAD  ,
                         unwatched_episode_trigger=settings.DEFAULT_UNWATCHED_EPISODE_TRIGGER,
                         follow_type=settings.DEFAULT_TVSHOW_FOLLOWTYPE
@@ -193,6 +207,9 @@ def getTvShowConfigs(show, plexuser):
             result.force = True
         elif label.tag == config.MEDIA_LABEL_SKIP:
             result.skip = True
+        elif label.tag.startswith(config.MEDIA_LABEL_IMDB+"="):
+            lb = label.tag.split("=")
+            result.imdb = lb[1]
         elif label.tag.startswith(config.MEDIA_LABEL_SHOW_EPISODES_TO_DOWNLOAD+"="):
             lb = label.tag.split("=")
             result.episode_to_download = lb[1]
@@ -201,16 +218,23 @@ def getTvShowConfigs(show, plexuser):
             result.unwatched_episode_trigger = lb[1]
         elif label.tag.startswith(config.MEDIA_LABEL_ENGINE+"="):
             lb = label.tag.split("=")
-            result.engines.append(lb[1])
+            result.engines.append(Engine(lb[1]))
+        elif label.tag.startswith(config.MEDIA_LABEL_EXTRA+"="):
+            lb = label.tag.split("=")
+            result.extras.append(lb[1])
     if(len(result.engines) == 0):
-        result.engines.append(plexuser.show_engine_order)
+        result.engines = plexuser.show_engine_order
+    if(len(result.extras) == 0):
+        result.extras = plexuser.show_extra_order
         
     return result
 
-def doShows(showList, plexConnection, plexuser):
+def getShowEpisodeList(showList, plexConnection, plexuser):
     result = []
     if(settings.FOLLOW_EVERY_SHOW_IN_LIBRARY):
-        showList = plexConnection.library.section('TV Shows').search("")
+        showList = []
+        for showInLib in settings.TV_SHOW_LIBRARIES:
+            showList += plexConnection.library.section(showInLib).search("")
     for showOnWatchList in showList:
         global DEBUG_COUNT
         showOnServer = plexConnection.library.search(guid=showOnWatchList.guid, libtype='show')
@@ -229,7 +253,14 @@ def doShows(showList, plexConnection, plexuser):
             collectedEpisodeList = []
             collectedSeasonEpisodeList = []
         
-        tvshowConfig = getTvShowConfigs(show, plexuser)        
+        tvshowConfig = getTvShowConfigs(show, plexuser)  
+        if(tvshowConfig.imdb == ''):
+            tvshowConfig.imdb = list(filter(lambda guid: guid.id.startswith("imdb:"), show.guids))        
+            if(len(tvshowConfig.imdb) > 0):
+                tvshowConfig.imdb = tvshowConfig.imdb[0].id.replace('imdb://', '') 
+            else:
+                tvshowConfig.imdb = config.ENGINE_EXTRA_EMPTY
+                tvshowConfig.skip = True
         
         isShowOnPlexMetadata = False
         try:
@@ -253,15 +284,21 @@ def doShows(showList, plexConnection, plexuser):
 
         episodeToDownload = getNextEpisodesList(tvshowConfig, collectedSeasonEpisodeList, list(map(lambda ep: {"s": ep.seasonNumber, "e": ep.episodeNumber}, nonCollectedSeasonEpisodeList)))
         if(tvshowConfig.skip):
-            doLogDebug("SKIP ::"+showOnWatchList.title+"(metadata:"+str(isShowOnPlexMetadata)+") is skipped"+ " :: ")
-        elif((unwatchedCount < tvshowConfig.unwatched_episode_trigger) and (len(episodeToDownload) > 0)):
-            doLog("DO   ::"+showOnWatchList.title+": "+ str(unwatchedCount)+ ' || '+ str(len(nonCollectedSeasonEpisodeList)) + " < "+str(tvshowConfig.unwatched_episode_trigger)+" :: "+json.dumps(episodeToDownload)+ " :: "+json.dumps(tvshowConfig.engines))
-        elif(tvshowConfig.force):
-            doLog("FORCE::"+showOnWatchList.title+"(metadata:"+str(isShowOnPlexMetadata)+") is forced download"+ " :: "+json.dumps(tvshowConfig.engines) )
+            a = ""
+            #doLogDebug("SKIP ::"+showOnWatchList.title+"(metadata:"+str(isShowOnPlexMetadata)+") is skipped"+ " :: ")
+        elif(not tvshowConfig.skip and (unwatchedCount < tvshowConfig.unwatched_episode_trigger) and (len(episodeToDownload) > 0)):
+            a = ""
+            doLog("DO   ::"+showOnWatchList.title+": "+ str(unwatchedCount)+ ' || '+ str(len(nonCollectedSeasonEpisodeList)) + " < "+str(tvshowConfig.unwatched_episode_trigger)+" :: "+json.dumps(episodeToDownload)+ " :: "+json.dumps(list(map(lambda en: en.id, tvshowConfig.engines))))
+            result.append({"tvshowConfig": tvshowConfig, "episodeToDownload": episodeToDownload})
+        elif(not tvshowConfig.skip and tvshowConfig.force):
+            a = ""
+            doLog("FORCE::"+showOnWatchList.title+"(metadata:"+str(isShowOnPlexMetadata)+") is forced download"+ " :: "+json.dumps(list(map(lambda en: en.id, tvshowConfig.engines))))
+            result.append({"tvshowConfig": tvshowConfig, "episodeToDownload": episodeToDownload})
         else:
-            doLogDebug("NOT  ::"+showOnWatchList.title+": "+ str(unwatchedCount)+ ' && '+ str(len(nonCollectedSeasonEpisodeList)) + " >= "+str(tvshowConfig.unwatched_episode_trigger)+" :: "+str(len(episodeToDownload)))
+            a = ""
+            #doLogDebug("NOT  ::"+showOnWatchList.title+": "+ str(unwatchedCount)+ ' && '+ str(len(nonCollectedSeasonEpisodeList)) + " >= "+str(tvshowConfig.unwatched_episode_trigger)+" :: "+str(len(episodeToDownload)))
         
-        result.append({"tvshowConfig": tvshowConfig, "episodeToDownload": episodeToDownload})
+    return result
 
 def getNextEpisodesList(tvshowConfig, collectedSeasonEpisodeList, nonCollectedSeasonEpisodeList):
     result = []
@@ -316,6 +353,92 @@ def getPlexMetadataEpisodeList(plexuser, show):
                     result.append(episode)
     return result
 
+
+def doSearhShowEpisodes(showList):
+    torrentList = []
+    for showToSearch in showList:    
+        try:
+            showToSearch["torrent"] = []
+            conf = showToSearch["tvshowConfig"]
+            show = conf.show
+            epList = showToSearch["episodeToDownload"] 
+            imdb = conf.imdb
+            seasonList = []
+            for ep in epList:  
+                if ep["s"] not in seasonList:
+                    seasonList.append(ep["s"])
+
+            url_title = ""        
+            episodeFormatted = ""
+            for se in seasonList:
+                seasonFound = False 
+                for engine in conf.engines:   
+                    if not seasonFound:  
+                        for extra in conf.extras:  
+                            if not seasonFound:                                
+                                for format in engine.seasonNumberFormatList:  
+                                    if not seasonFound: 
+                                        seasonFormatted = format.format(S = se)
+                                        url_title = (toPlainStr(show.title)+" "+ seasonFormatted  + " " + extra)                                        
+                                        proc = doTorrentSearch(engine.id, url_title.replace(" ", "."), CAT_CONVERT[show.type], imdb)  
+                                        results = proc.stdout.decode().split("\n")   
+                                        resultArr = results[0].split("|")
+                                        #TODO: Check For extras here instead of new query for each
+                                        if len(resultArr) > 1:
+                                            if(extra == ''):
+                                                extra = 'Unknown'
+                                            seasonFound = True
+                                            torrentList.append(
+                                                {"show": show,
+                                                 "imdb": imdb,
+                                                 "extra": extra,
+                                                 "seasonEpisode": {"s": se},
+                                                 "torrent": resultArr, 
+                                                 "folder":  toPlainStr(show.title)+" ("+toPlainStr(imdb)+")/"+("Season {S:01}".format(S = se)+"/"+extra)}
+                                            )      
+                if(seasonFound):
+                    doLog("seFound     :"+url_title+" "+episodeFormatted+" ("+imdb+"): "+json.dumps(torrentList[-1]["torrent"])+"")    
+                else:
+                    url_title = ""        
+                    episodeFormatted = "" 
+                    for ep in list(filter(lambda e: e["s"]==se, epList)):  
+                        episodeFound = False  
+                        for engine in conf.engines:   
+                            if not episodeFound:  
+                                for extra in conf.extras:  
+                                    if not episodeFound:
+                                        for format in engine.episodeNumberFormatList:  
+                                            if not episodeFound:
+                                                episodeFormatted = format.format(S = ep["s"], E = ep["e"])
+                                                url_title = (toPlainStr(show.title)+" "+ episodeFormatted  + " " + extra)
+                                                proc = doTorrentSearch(engine.id, url_title.replace(" ", "."), CAT_CONVERT[show.type], imdb)      
+                                                results = proc.stdout.decode().split("\n")   
+                                                resultArr = results[0].split("|")
+                                                #TODO: Check For extras here instead of new query for each
+                                                if len(resultArr) > 1:
+                                                    if(extra == ''):
+                                                        extra = 'Unknown'
+                                                    episodeFound = True
+                                                    showToSearch["torrent"].append({"torrent": resultArr, 
+                                                                                    }) 
+                                                    torrentList.append(
+                                                        {"show": show,
+                                                        "imdb": imdb,
+                                                        "extra": extra,
+                                                        "seasonEpisode": ep,
+                                                        "torrent": resultArr, 
+                                                        "folder": toPlainStr(show.title)+" ("+toPlainStr(imdb)+")/"+("Season {S:01}".format(S = se))+"/"+("S{S:02}E{E:02}").format(S = ep["s"], E = ep["e"])+"/"+extra
+                                                        }
+                                                    ) 
+                        if(episodeFound):
+                            doLog("epFound     :"+url_title+" "+episodeFormatted+" ("+imdb+"): "+json.dumps(torrentList[-1]["torrent"])+"")    
+                        #else:
+                        #    doLogDebug("Not Found :"+url_title+" "+episodeFormatted+" ("+imdb+"): ")   
+        except:
+            doLog("Error     :"+traceback.format_exc())
+    return torrentList
+
+
 def main(args):
     try:
         doLogDebug("Running PlexAutoTorrent "+json.dumps(args)+":::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::")    
@@ -325,6 +448,7 @@ def main(args):
         global _DO_DRYRUN
         _DO_DRYRUN = True if(args["dryrun"]) else False
 
+        showEpisodeList = []
         for plexuser in settings.PLEXUSERS:
             DEBUG_COUNT['users'] = DEBUG_COUNT['users'] + 1
             doLogDebug("plexuser: "+ plexuser.username )
@@ -333,11 +457,29 @@ def main(args):
 
             if not args["skipmovies"]:
                 doLogDebug("movies: "+ plexuser.username )
-                #doMovies(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='movie'), plex, plexuser)
+                doMovies(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='movie'), plex, plexuser)
                 
-            if not args["shipshows"]:
+            if not args["skipshows"]:
                 doLogDebug("shows: "+ plexuser.username )
-                doShows(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='show'), plex, plexuser)
+                showEpisode = getShowEpisodeList(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='show'), plex, plexuser)
+                if(showEpisode is not None):
+                    showEpisodeList += showEpisode
+
+        torrentList = doSearhShowEpisodes(showEpisodeList)
+
+        for torrent in torrentList:
+            url_title = toPlainStr(torrent["show"].title)
+            se = ("S{S:02}").format(S = torrent["seasonEpisode"]["s"])
+            if("e" in torrent["seasonEpisode"]):
+                se = se + ("E{E:02}").format(E = torrent["seasonEpisode"]["e"])
+            torrent_path = _TORRENT_FILE_PATH+torrent["show"].type+"/"+ url_title +" ("+toPlainStr(torrent["imdb"])+")/"+url_title+" "+se+torrent["extra"]
+            save_path = _SHOWS_PATH + torrent["folder"]
+
+            if not os.path.exists(torrent_path+"*"):
+                res = doDownloadTorrent(torrent["torrent"], torrent_path, save_path)                
+                if res is not None:                    
+                    TELEGRAM_REPORT["shows"].append({"url_title": url_title, "seasonEpisode": torrent["seasonEpisode"]})
+            
 
         if(args["telegramreport"]):
             sendTelegramReport(json.dumps(TELEGRAM_REPORT)+" \n "+json.dumps(DEBUG_COUNT))
@@ -381,6 +523,11 @@ def arvToDict(args):
         d[k].append(v) if not v.lower() in ['true', '1'] else d[k].append(True)
     return d
 
+def merge_two_dicts(x, y):
+    z = x.copy()   # start with keys and values of x
+    z.update(y)    # modifies z with keys and values of y
+    return z
+
 if __name__ == "__main__":
     main(arvToDict(argv))
 
@@ -389,6 +536,8 @@ class Object:
     def toJSON(self):
         return json.dumps(self, default=lambda o: o.__dict__, 
             sort_keys=True, indent=4)    
+
+
 
         #https://metadata.provider.plex.tv/library/sections/watchlist?X-Plex-Token=uxT7yvhM6M3GVfYG5Tsx
         #https://metadata.provider.plex.tv/library/metadata/5d9c084fec357c001f9ab4d8/children?X-Plex-Token=uxT7yvhM6M3GVfYG5Tsx

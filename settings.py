@@ -8,7 +8,7 @@ class settings():
     TORRENT_FILE_PATH = ""
     QBITTORRENT_PATH = ''
     MOVIES_PATH = ''
-    LOG_FILEPATH = ''    
+    SHOWS_PATH = ''
     ##### TELEGRAM configs:
     TELEGRAM_BOT_TOKEN = ""
     TELEGRAM_RAW_ID = ""
@@ -23,6 +23,7 @@ class settings():
     ]    
 
     #####
+    TV_SHOW_LIBRARIES = ['TV Shows']
     FOLLOW_EVERY_SHOW_IN_LIBRARY = False #If True every show is going to be followed not just the ones in a user library; Default: False
     DEFAULT_TVSHOW_FOLLOWTYPE = TvShowFollowType.NextSeason # Default: TvShowFollowType.NextSeason
     DEFAULT_UNWATCHED_EPISODE_TRIGGER = 3 # Default: 3
