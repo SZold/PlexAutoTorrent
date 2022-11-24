@@ -16,11 +16,6 @@ import requests
 
 from settings import settings
 
-_TORRENT_FILE_PATH = settings.TORRENT_FILE_PATH
-_QBITTORRENT_PATH = settings.QBITTORRENT_PATH
-_MOVIES_PATH = settings.MOVIES_PATH
-_SHOWS_PATH = settings.SHOWS_PATH
-_LOG_FILEPATH = settings.LOG_FILEPATH
 _DO_LOG = False
 _DO_DRYRUN = False
 
@@ -65,10 +60,10 @@ def doLogDebug(string):
 
 def doLog(string):    
     try:
-        if(_DO_LOG and _LOG_FILEPATH != ''):
+        if(_DO_LOG and settings.LOG_FILEPATH != ''):
             txt = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')+" :: " + string + "\n"
-            os.makedirs(os.path.dirname(_LOG_FILEPATH), exist_ok=True)
-            f= open(_LOG_FILEPATH,"a")
+            os.makedirs(os.path.dirname(settings.LOG_FILEPATH), exist_ok=True)
+            f= open(settings.LOG_FILEPATH,"a")
             f.write(txt)
             print(txt)
             f.close()
@@ -92,8 +87,8 @@ def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
                             f= open(torrent_path+".magnet","w+")
                             f.write(torrent[0])
                             f.close()
-                        os.chdir(os.path.dirname(_QBITTORRENT_PATH)) 
-                        proc = subprocess.run([_QBITTORRENT_PATH, torrent[0], "--add-paused=false", "--skip-dialog=true", '--sequential', '--save-path='+save_path+'/']) 
+                        os.chdir(os.path.dirname(settings.QBITTORRENT_PATH)) 
+                        proc = subprocess.run([settings.QBITTORRENT_PATH, torrent[0], "--add-paused=false", "--skip-dialog=true", '--sequential', '--save-path='+save_path+'/']) 
                         if proc.returncode > 0:
                             TELEGRAM_REPORT["error"].append("Return: "+str(proc.returncode)+"; \n stderr: "+proc.stderr.decode()+"; \n stdout: "+proc.stdout.decode())
                             os.remove(torrent_path+".magnet") 
@@ -112,10 +107,10 @@ def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
                 else:  
                     if not _DO_DRYRUN:                     
                         safe_copy(torrent[0], torrent_path+".torrent")    
-                        cmd = [_QBITTORRENT_PATH, '"'+torrent_path+".torrent"+'"', "--add-paused", "false", "--save-path",'"'+save_path+'/"']
+                        cmd = [settings.QBITTORRENT_PATH, '"'+torrent_path+".torrent"+'"', "--add-paused", "false", "--save-path",'"'+save_path+'/"']
                         cmd2 = ' '.join(cmd)
-                        os.chdir(os.path.dirname(_QBITTORRENT_PATH))
-                        proc = subprocess.run([_QBITTORRENT_PATH, ''+torrent_path+".torrent"+'', "--add-paused=false", '--sequential',  "--skip-dialog=true",'--save-path='+save_path+'/'])  
+                        os.chdir(os.path.dirname(settings.QBITTORRENT_PATH))
+                        proc = subprocess.run([settings.QBITTORRENT_PATH, ''+torrent_path+".torrent"+'', "--add-paused=false", '--sequential',  "--skip-dialog=true",'--save-path='+save_path+'/'])  
                         if proc.returncode > 0:
                             TELEGRAM_REPORT["error"].append("Return: "+str(proc.returncode)+"; \n stderr: "+proc.stderr.decode()+"; \n stdout: "+proc.stdout.decode())
                             os.remove(torrent_path+".torrent") 
@@ -184,7 +179,7 @@ def doMovies(movieList, plexConnection, plexuser):
                             resultArr = ["","","","","","","","","",""]
             
             if foundObj is not None: 
-                res = doDownloadTorrent(foundObj, torrent_path, _MOVIES_PATH+url_title)                
+                res = doDownloadTorrent(foundObj, torrent_path, settings.MOVIES_PATH+url_title)                
                 if res is not None:                    
                     TELEGRAM_REPORT["movies"].append({"user": plexuser.username, "title": movie.title, "year": movie.year, "torrentpath": res})
             else:
@@ -400,7 +395,7 @@ def doSearhShowEpisodes(showList):
                                                  "extra": extra,
                                                  "seasonEpisode": {"s": se},
                                                  "torrent": resultArr, 
-                                                 "folder":  toPlainStr(show.title)+" ("+toPlainStr(imdb)+")/"+("Season {S:01}".format(S = se)+"/"+extra)}
+                                                 "folder":  toPlainStr(show.title)+" [imdb="+toPlainStr(imdb)+"]/"+("Season {S:01}".format(S = se)+"/"+extra)}
                                             )      
                 if(seasonFound):
                     doLog("seFound     :"+url_title+" "+episodeFormatted+" ("+imdb+"): "+json.dumps(torrentList[-1]["torrent"])+"")    
@@ -433,7 +428,7 @@ def doSearhShowEpisodes(showList):
                                                         "extra": extra,
                                                         "seasonEpisode": ep,
                                                         "torrent": resultArr, 
-                                                        "folder": toPlainStr(show.title)+" ("+toPlainStr(imdb)+")/"+("Season {S:01}".format(S = se))+"/"+("S{S:02}E{E:02}").format(S = ep["s"], E = ep["e"])+"/"+extra
+                                                        "folder": toPlainStr(show.title)+" [imdb="+toPlainStr(imdb)+"]/"+("Season {S:01}".format(S = se))+"/"+("S{S:02}E{E:02}").format(S = ep["s"], E = ep["e"])+"/"+extra
                                                         }
                                                     ) 
                         if(episodeFound):
@@ -478,8 +473,8 @@ def main(args):
             se = ("S{S:02}").format(S = torrent["seasonEpisode"]["s"])
             if("e" in torrent["seasonEpisode"]):
                 se = se + ("E{E:02}").format(E = torrent["seasonEpisode"]["e"])
-            torrent_path = _TORRENT_FILE_PATH+torrent["show"].type+"/"+ url_title +" ("+toPlainStr(torrent["imdb"])+")/"+url_title+"_"+se+"_"+torrent["extra"]
-            save_path = _SHOWS_PATH + torrent["folder"]
+            torrent_path = _TORRENT_FILE_PATH+torrent["show"].type+"/"+ url_title +" [imdb="+toPlainStr(torrent["imdb"])+"]/"+url_title+"_"+se+"_"+torrent["extra"]
+            save_path = settings.SHOWS_PATH + torrent["folder"]
 
             if not os.path.exists(torrent_path+".torrent") and not os.path.exists(torrent_path+".magnet"):
                 res = doDownloadTorrent(torrent["torrent"], torrent_path, save_path)                

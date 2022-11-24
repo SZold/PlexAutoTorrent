@@ -13,6 +13,11 @@ class settings():
     ##### TELEGRAM configs:
     TELEGRAM_BOT_TOKEN = ""
     TELEGRAM_RAW_ID = ""
+    ##### QBITTORRENT configs:
+    QBITTORRENT_HOST='localhost',
+    QBITTORRENT_PORT=8080,
+    QBITTORRENT_USER='admin',
+    QBITTORRENT_PASS='adminadmin',
     ##### User configs:
     PLEXUSERS = [PatUser(username="plexuser", 
                          password="plexpass", 
