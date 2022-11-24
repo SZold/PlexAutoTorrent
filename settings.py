@@ -9,6 +9,7 @@ class settings():
     QBITTORRENT_PATH = ''
     MOVIES_PATH = ''
     SHOWS_PATH = ''
+    LOG_FILEPATH = ''
     ##### TELEGRAM configs:
     TELEGRAM_BOT_TOKEN = ""
     TELEGRAM_RAW_ID = ""
