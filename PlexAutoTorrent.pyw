@@ -70,6 +70,17 @@ def doLog(string):
     except:
         print(string)
 
+def addTorrentToClient(save_path, torrentPath):
+    proc = subprocess.run([settings.QBITTORRENT_PATH, torrentPath, "--add-paused=false", "--skip-dialog=true", '--sequential', '--save-path='+save_path+'/']) 
+    if proc.returncode > 0:
+        TELEGRAM_REPORT["error"].append("Return: "+str(proc.returncode)+"; \n stderr: "+proc.stderr.decode()+"; \n stdout: "+proc.stdout.decode())
+        doLog(proc.returncode)  
+        doLog(proc.stderr.decode())
+        doLog(proc.stdout.decode())
+        return False
+    return True
+    
+
 def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
     result = None
     if torrentPluginResult is not None: 
@@ -80,50 +91,41 @@ def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
             torrent = proc.stdout.decode().split(" ") 
             #doLog(", "+torrentPluginResult[1] + ", " + torrent_path +":::  "+torrentPluginResult[-1])
             if len(torrent) > 0: 
-                if(torrent[0].startswith("magnet:?")):       
+                if(torrent[0].startswith("magnet:?")):    
+                    magnetFilePath = torrent_path+".magnet"   
                     if not _DO_DRYRUN:             
-                        if not os.path.exists(torrent_path+"*"):
-                            os.makedirs(os.path.dirname(torrent_path+".magnet"), exist_ok=True)
-                            f= open(torrent_path+".magnet","w+")
+                        if not os.path.exists(magnetFilePath):
+                            os.makedirs(os.path.dirname(magnetFilePath), exist_ok=True)
+                            f= open(magnetFilePath,"w+")
                             f.write(torrent[0])
                             f.close()
                         os.chdir(os.path.dirname(settings.QBITTORRENT_PATH)) 
-                        proc = subprocess.run([settings.QBITTORRENT_PATH, torrent[0], "--add-paused=false", "--skip-dialog=true", '--sequential', '--save-path='+save_path+'/']) 
-                        if proc.returncode > 0:
-                            TELEGRAM_REPORT["error"].append("Return: "+str(proc.returncode)+"; \n stderr: "+proc.stderr.decode()+"; \n stdout: "+proc.stdout.decode())
-                            os.remove(torrent_path+".magnet") 
-                            doLog(proc.returncode)  
-                            doLog(proc.stderr.decode())
-                            doLog(proc.stdout.decode())
-                        else:    
-                            DEBUG_COUNT['magnetDownloaded'] = DEBUG_COUNT['magnetDownloaded'] + 1 
-                            result = torrent_path+".magnet"
+                        success = addTorrentToClient(save_path, torrent[0])
+                        if not success:                            
+                            os.remove(magnetFilePath) 
+                        else:
+                            result = magnetFilePath
                     else:    
                         DEBUG_COUNT['magnetDownloaded'] = DEBUG_COUNT['magnetDownloaded'] + 1 
-                        doLogDebug("DRY RUN:  "+torrent_path+"; "+save_path)
-                        result = torrent_path+".magnet"
+                        doLogDebug("DRY RUN:  "+magnetFilePath+"; "+save_path)
+                        result = magnetFilePath
                           
                     doLogDebug("Magnet Link:  ")
                 else:  
+                    torrentFilePath = torrent_path+".torrent"  
                     if not _DO_DRYRUN:                     
-                        safe_copy(torrent[0], torrent_path+".torrent")    
-                        cmd = [settings.QBITTORRENT_PATH, '"'+torrent_path+".torrent"+'"', "--add-paused", "false", "--save-path",'"'+save_path+'/"']
-                        cmd2 = ' '.join(cmd)
+                        safe_copy(torrent[0], torrentFilePath)    
                         os.chdir(os.path.dirname(settings.QBITTORRENT_PATH))
-                        proc = subprocess.run([settings.QBITTORRENT_PATH, ''+torrent_path+".torrent"+'', "--add-paused=false", '--sequential',  "--skip-dialog=true",'--save-path='+save_path+'/'])  
-                        if proc.returncode > 0:
-                            TELEGRAM_REPORT["error"].append("Return: "+str(proc.returncode)+"; \n stderr: "+proc.stderr.decode()+"; \n stdout: "+proc.stdout.decode())
-                            os.remove(torrent_path+".torrent") 
-                            doLog(proc.returncode)  
-                            doLog(proc.stderr.decode())
-                            doLog(proc.stdout.decode())  
+                        success = addTorrentToClient(save_path, torrentFilePath)
+                        if not success:
+                            os.remove(torrentFilePath)  
                         else:
                             DEBUG_COUNT['torrentDownloaded'] = DEBUG_COUNT['torrentDownloaded'] + 1 
-                            result = torrent_path+".torrent"
+                            result = torrentFilePath
                     else:
                         DEBUG_COUNT['torrentDownloaded'] = DEBUG_COUNT['torrentDownloaded'] + 1 
                         doLogDebug("DRY RUN:  "+torrent_path+"; "+save_path)
-                        result = torrent_path+".torrent"
+                        result = torrentFilePath
                     #doLog(foundEngine+ ", "+foundObj[1] + ", " + movie.type+ ", "+imdb+":::  "+torrent[0]) "--skip-dialog", "true",
     return result
 
@@ -148,7 +150,7 @@ def doMovies(movieList, plexConnection, plexuser):
             imdb = config.ENGINE_EXTRA_EMPTY
 
         url_title = re.sub(r'[\W_]+', ' ', movie.title) + " " + str(movie.year) 
-        torrent_path =  _TORRENT_FILE_PATH+"/"+movie.type+"/"+re.sub(r'[\W_]+', '', imdb)+"_" + url_title +""
+        torrent_path =  settings.TORRENT_FILE_PATH+"/"+movie.type+"/"+re.sub(r'[\W_]+', '', imdb)+"_" + url_title +""
 
         movieOnPlex = plexConnection.library.search(guid=movie.guid, libtype=movie.type)
 
@@ -158,7 +160,7 @@ def doMovies(movieList, plexConnection, plexuser):
             for engine in plexuser.movie_engine_order:
                 for extra in plexuser.movie_extra_order:
                     if foundObj is None:
-                        torrent_path = _TORRENT_FILE_PATH+movie.type+"/"+re.sub(r'[\W_]+', '', imdb)+"_"+engine.id+"_" + url_title +""                    
+                        torrent_path = settings.TORRENT_FILE_PATH+movie.type+"/"+re.sub(r'[\W_]+', '', imdb)+"_"+engine.id+"_" + url_title +""                    
                         
                         url_title = toPlainStr(movie.title)   
                         if(imdb == config.ENGINE_EXTRA_EMPTY):   
@@ -451,20 +453,23 @@ def main(args):
 
         showEpisodeList = []
         for plexuser in settings.PLEXUSERS:
-            DEBUG_COUNT['users'] = DEBUG_COUNT['users'] + 1
-            doLogDebug("plexuser: "+ plexuser.username )
-            plexuser.account = MyPlexAccount(plexuser.username, plexuser.password)
-            plex = plexuser.account.resource(plexuser.servername).connect()  # returns a PlexServer instance 
+            try:
+                DEBUG_COUNT['users'] = DEBUG_COUNT['users'] + 1
+                doLogDebug("plexuser: "+ plexuser.username )
+                plexuser.account = MyPlexAccount(plexuser.username, plexuser.password)
+                plex = plexuser.account.resource(plexuser.servername).connect()  # returns a PlexServer instance 
 
-            if not args["skipmovies"]:
-                doLogDebug("movies: "+ plexuser.username )
-                doMovies(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='movie'), plex, plexuser)
-                
-            if not args["skipshows"]:
-                doLogDebug("shows: "+ plexuser.username )
-                showEpisode = getShowEpisodeList(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='show'), plex, plexuser)
-                if(showEpisode is not None):
-                    showEpisodeList += showEpisode
+                if not args["skipmovies"]:
+                    doLogDebug("movies: "+ plexuser.username )
+                    doMovies(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='movie'), plex, plexuser)
+                    
+                if not args["skipshows"]:
+                    doLogDebug("shows: "+ plexuser.username )
+                    showEpisode = getShowEpisodeList(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='show'), plex, plexuser)
+                    if(showEpisode is not None):
+                        showEpisodeList += showEpisode
+            except:
+                doLog("plexuser Error     :"+traceback.format_exc())
 
         torrentList = doSearhShowEpisodes(showEpisodeList)
 
@@ -473,7 +478,7 @@ def main(args):
             se = ("S{S:02}").format(S = torrent["seasonEpisode"]["s"])
             if("e" in torrent["seasonEpisode"]):
                 se = se + ("E{E:02}").format(E = torrent["seasonEpisode"]["e"])
-            torrent_path = _TORRENT_FILE_PATH+torrent["show"].type+"/"+ url_title +" [imdb="+toPlainStr(torrent["imdb"])+"]/"+url_title+"_"+se+"_"+torrent["extra"]
+            torrent_path = settings.TORRENT_FILE_PATH+torrent["show"].type+"/"+ url_title +" [imdb="+toPlainStr(torrent["imdb"])+"]/"+url_title+"_"+se+"_"+torrent["extra"]
             save_path = settings.SHOWS_PATH + torrent["folder"]
 
             if not os.path.exists(torrent_path+".torrent") and not os.path.exists(torrent_path+".magnet"):

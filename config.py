@@ -1,6 +1,6 @@
 from datetime import datetime
 from settings import settings
-from PlexAutoTorrentClasses import PatTvShow, PatUser, TvShowFollowType
+from PlexAutoTorrentClasses import QBittorrentStates
 import os
 
 
@@ -12,6 +12,32 @@ class config():
     #####
     ENGINE_ID_SOURCE = "imdb"#
     ENGINE_EXTRA_EMPTY = "."
+
+
+    #:■◼▢⬕▢⏹■◧⏹◻□:⬛⬜◼️⏸️|▬▬▭▭|◼◼◻◻|▰▰▱▱|▂▂|═══|═━──┄┈|24%█▮▯:::╞═▰════════╡ 20%▰▱20%■▢▢▢▢▢▢▢▢▢ 10% 10% 10%
+    PROGRESSBAR_WIDTH = 10
+    PROGRESSBAR_START = ""   # "["
+    PROGRESSBAR_STOP  = ""   # "]"
+    PROGRESSBAR_WHOLE = "▰" # "█"
+    PROGRESSBAR_BLANK = "─"  # " "
+    PROGRESSBAR_STEP_CHARS = [] #[" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉"]    "▉▊▋▌▍▎▏ "
+    PROGRESSBAR_V2 = ["⠀", "⠁", "⠃", "⠇", "⡇", "⡏", "⡟", "⡿"]
+
+    ## https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.1)#torrent-management
+    # in formatting "{t}" = torrent object; "{progressbar} and {progressbarv2} are progressbars made with unicode charachters based on the PROGRESSBAR_ configurations"
+    DOWNLOAD_PROGRESS_FORMAT = {}
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.default] = ""
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.downloading] = "⬇️{t.progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.allocating] = "🔃{t.progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.checkingDL] = "🔄{t.progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.checkingResumeData] = "🔄{t.progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.metaDL] = "⏬{t.progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.moving] = "➡️{t.progress:.0%}"
+    
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.pausedDL] = "⏸️{t.progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.queuedDL] = "⏯️{t.progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.stalledDL] = "⏹️{t.progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.error] = "🛑{t.progress:.0%}"
 
 
 
