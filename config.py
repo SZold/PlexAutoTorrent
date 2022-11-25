@@ -26,7 +26,6 @@ class config():
     ## https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.1)#torrent-management
     # in formatting "{t}" = torrent object; "{progressbar} and {progressbarv2} are progressbars made with unicode charachters based on the PROGRESSBAR_ configurations"
     DOWNLOAD_PROGRESS_FORMAT = {}
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.default] = ""
     DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.downloading] = "⬇️{t.progress:.0%}"
     DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.allocating] = "🔃{t.progress:.0%}"
     DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.checkingDL] = "🔄{t.progress:.0%}"
@@ -39,7 +38,9 @@ class config():
     DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.stalledDL] = "⏹️{t.progress:.0%}"
     DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.error] = "🛑{t.progress:.0%}"
 
-
+    QBITTORRENT_PLEXAUTOTORRENT_TAG = "PlexAutoTorrent"
+    QBITTORRENT_COMPLETE_TAG = "PlexAutoTorrentCompleted"
+    QBITTORRENT_PLEXID_TAG = "plexid_{plexid}"
 
     CHECK_DESCRIPTION_FOR_GUIDS = False 
     SKIP_SPECIALS = True 

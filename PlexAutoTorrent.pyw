@@ -8,11 +8,10 @@ import os
 import shutil
 from plexapi.myplex import MyPlexAccount
 import re
-import urllib.parse
-import nova2
 import subprocess
 from sys import argv
 import requests
+import qbittorrentapi
 
 from settings import settings
 
@@ -70,21 +69,28 @@ def doLog(string):
     except:
         print(string)
 
-def addTorrentToClient(save_path, torrentPath):
-    proc = subprocess.run([settings.QBITTORRENT_PATH, torrentPath, "--add-paused=false", "--skip-dialog=true", '--sequential', '--save-path='+save_path+'/']) 
-    if proc.returncode > 0:
-        TELEGRAM_REPORT["error"].append("Return: "+str(proc.returncode)+"; \n stderr: "+proc.stderr.decode()+"; \n stdout: "+proc.stdout.decode())
-        doLog(proc.returncode)  
-        doLog(proc.stderr.decode())
-        doLog(proc.stdout.decode())
-        return False
+def addTorrentToClient(plexMedia, save_path, torrentPath="", magnetPath=""):
+    plexid = toPlainStr(plexMedia.guid).replace(" ", "-")
+    qbt_client = qbittorrentapi.Client(host=settings.QBITTORRENT_HOST, port=settings.QBITTORRENT_PORT,username=settings.QBITTORRENT_USER,password=settings.QBITTORRENT_PASS,)
+    
+    if not _DO_DRYRUN:   
+        res = qbt_client.torrents.add(  urls=magnetPath.lower(), 
+                                        torrent_files=torrentPath.lower(), 
+                                        save_path=save_path.lower(), 
+                                        tags=(config.QBITTORRENT_PLEXAUTOTORRENT_TAG+","+config.QBITTORRENT_PLEXID_TAG.format(plexid = plexid)).lower(),
+                                        sequentialDownload = True,
+                                    )
+        res = res
+        if res != "Ok.":            
+            return False
+    else:
+         doLogDebug("DRY RUN:  addTorrentToClient:"+plexid+"; "+save_path+"; "+torrentPath+"; "+magnetPath+"; ")
     return True
     
 
-def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
+def doDownloadTorrent(plexMedia, torrentPluginResult, torrent_path, save_path):
     result = None
     if torrentPluginResult is not None: 
-        doLogDebug("movie"+ torrent_path +"torrentPluginResult is not None")
         if len(torrentPluginResult) > 0:            
             os.chdir(os.path.dirname(SCRIPT_PATH))
             proc = subprocess.run( ['pyw', 'nova2dl.py',  torrentPluginResult[5], torrentPluginResult[0]], capture_output=True)
@@ -92,22 +98,22 @@ def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
             #doLog(", "+torrentPluginResult[1] + ", " + torrent_path +":::  "+torrentPluginResult[-1])
             if len(torrent) > 0: 
                 if(torrent[0].startswith("magnet:?")):    
-                    magnetFilePath = torrent_path+".magnet"   
-                    if not _DO_DRYRUN:             
-                        if not os.path.exists(magnetFilePath):
+                    magnetFilePath = torrent_path+".magnet"    
+                    if not os.path.exists(magnetFilePath):
+                        if not _DO_DRYRUN:            
                             os.makedirs(os.path.dirname(magnetFilePath), exist_ok=True)
                             f= open(magnetFilePath,"w+")
                             f.write(torrent[0])
                             f.close()
-                        os.chdir(os.path.dirname(settings.QBITTORRENT_PATH)) 
-                        success = addTorrentToClient(save_path, torrent[0])
-                        if not success:                            
+                        else:    
+                            doLogDebug("DRY RUN:  "+magnetFilePath+"; "+save_path)
+                    os.chdir(os.path.dirname(settings.QBITTORRENT_PATH)) 
+                    success = addTorrentToClient(plexMedia, save_path, torrent[0])
+                    if not success:     
+                        if not _DO_DRYRUN:                        
                             os.remove(magnetFilePath) 
-                        else:
-                            result = magnetFilePath
                     else:    
                         DEBUG_COUNT['magnetDownloaded'] = DEBUG_COUNT['magnetDownloaded'] + 1 
-                        doLogDebug("DRY RUN:  "+magnetFilePath+"; "+save_path)
                         result = magnetFilePath
                           
                     doLogDebug("Magnet Link:  ")
@@ -115,16 +121,12 @@ def doDownloadTorrent(torrentPluginResult, torrent_path, save_path):
                     torrentFilePath = torrent_path+".torrent"  
                     if not _DO_DRYRUN:                     
                         safe_copy(torrent[0], torrentFilePath)    
-                        os.chdir(os.path.dirname(settings.QBITTORRENT_PATH))
-                        success = addTorrentToClient(save_path, torrentFilePath)
-                        if not success:
-                            os.remove(torrentFilePath)  
-                        else:
-                            DEBUG_COUNT['torrentDownloaded'] = DEBUG_COUNT['torrentDownloaded'] + 1 
-                            result = torrentFilePath
+                    os.chdir(os.path.dirname(settings.QBITTORRENT_PATH))
+                    success = addTorrentToClient(plexMedia, save_path, torrentFilePath)
+                    if not success:
+                        os.remove(torrentFilePath)  
                     else:
                         DEBUG_COUNT['torrentDownloaded'] = DEBUG_COUNT['torrentDownloaded'] + 1 
-                        doLogDebug("DRY RUN:  "+torrent_path+"; "+save_path)
                         result = torrentFilePath
                     #doLog(foundEngine+ ", "+foundObj[1] + ", " + movie.type+ ", "+imdb+":::  "+torrent[0]) "--skip-dialog", "true",
     return result
@@ -181,7 +183,7 @@ def doMovies(movieList, plexConnection, plexuser):
                             resultArr = ["","","","","","","","","",""]
             
             if foundObj is not None: 
-                res = doDownloadTorrent(foundObj, torrent_path, settings.MOVIES_PATH+url_title)                
+                res = doDownloadTorrent(movie, foundObj, torrent_path, settings.MOVIES_PATH+url_title)                
                 if res is not None:                    
                     TELEGRAM_REPORT["movies"].append({"user": plexuser.username, "title": movie.title, "year": movie.year, "torrentpath": res})
             else:
@@ -467,8 +469,9 @@ def main(args):
                     doLogDebug("shows: "+ plexuser.username )
                     showEpisode = getShowEpisodeList(plexuser.account.watchlist(filter='released', sort='rating:desc', libtype='show'), plex, plexuser)
                     if(showEpisode is not None):
-                        showEpisodeList += showEpisode
-            except:
+                        showEpisodeList += showEpisode  
+            except Exception as e :
+                doLog(e)
                 doLog("plexuser Error     :"+traceback.format_exc())
 
         torrentList = doSearhShowEpisodes(showEpisodeList)
@@ -482,7 +485,7 @@ def main(args):
             save_path = settings.SHOWS_PATH + torrent["folder"]
 
             if not os.path.exists(torrent_path+".torrent") and not os.path.exists(torrent_path+".magnet"):
-                res = doDownloadTorrent(torrent["torrent"], torrent_path, save_path)                
+                res = doDownloadTorrent(torrent["show"], torrent["torrent"], torrent_path, save_path)                
                 if res is not None:                    
                     TELEGRAM_REPORT["shows"].append({"url_title": url_title, "seasonEpisode": torrent["seasonEpisode"]})
             
@@ -492,7 +495,8 @@ def main(args):
 
         doLog("telegramreport ::("+json.dumps(TELEGRAM_REPORT)+")")
         doLog("PlexAutoTorrent ::("+json.dumps(DEBUG_COUNT)+"):::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::")    
-    except Exception:
+    except Exception as e :
+        doLog(e)
         doLog(traceback.format_exc())
         return False
 
