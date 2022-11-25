@@ -74,7 +74,7 @@ def findPlexMedia(torrent, plex, qbt_client):
             return plexShow
 
 def setTorrentProgress(plexMediaItem, progress, state, field):
-    if(QBittorrentStates.__dict__[state] in config.DOWNLOAD_PROGRESS_FORMAT):
+    if(QBittorrentStates.__dict__[state] in config.DOWNLOAD_PROGRESS_FORMAT and progress < 1):
         pb = ProgressBar.progress_bar_str(progress, config.PROGRESSBAR_WIDTH, config.PROGRESSBAR_START, config.PROGRESSBAR_STOP, config.PROGRESSBAR_WHOLE, config.PROGRESSBAR_BLANK, [])
         s = config.DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.__dict__[state]].format(progressbar = pb, progress = progress, state = state)
         plexMediaItem.editField(field, s, locked=True)
