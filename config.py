@@ -26,18 +26,22 @@ class config():
     ## https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.1)#torrent-management
     # in formatting "{t}" = torrent object; "{progressbar} and {progressbarv2} are progressbars made with unicode charachters based on the PROGRESSBAR_ configurations"
     DOWNLOAD_PROGRESS_FORMAT = {}
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.downloading] = "⬇️{t.progress:.0%}"
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.allocating] = "🔃{t.progress:.0%}"
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.checkingDL] = "🔄{t.progress:.0%}"
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.checkingResumeData] = "🔄{t.progress:.0%}"
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.metaDL] = "⏬{t.progress:.0%}"
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.moving] = "➡️{t.progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.downloading] = "⬇️{progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.forcedDL] = "⏬{progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.allocating] = "🔃{progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.checkingDL] = "🔄{progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.checkingResumeData] = "🔄{progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.metaDL] = "↘️{progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.moving] = "➡️{progress:.0%}"
     
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.pausedDL] = "⏸️{t.progress:.0%}"
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.queuedDL] = "⏯️{t.progress:.0%}"
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.stalledDL] = "⏹️{t.progress:.0%}"
-    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.error] = "🛑{t.progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.pausedDL] = "⏸️{progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.queuedDL] = "⏯️{progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.stalledDL] = "⏹️{progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.unknown] = "⚠️{progress:.0%}"
+    DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.error] = "🛑{progress:.0%}"
 
+    QBITTORRENT_PLEX_SHOWPROGRESS_FIELD_ID = "contentRating" #editionTitle
+    QBITTORRENT_PLEX_MOVIEPROGRESS_FIELD_ID = "editionTitle" #editionTitle
     QBITTORRENT_PLEXAUTOTORRENT_TAG = "PlexAutoTorrent"
     QBITTORRENT_COMPLETE_TAG = "PlexAutoTorrentCompleted"
     QBITTORRENT_PLEXID_TAG = "plexid_{plexid}"

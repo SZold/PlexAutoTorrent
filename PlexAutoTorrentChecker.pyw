@@ -36,7 +36,7 @@ def toPlainStr(str):
     url_title = re.sub(r'[\W_]+', ' ', str)                     
     return url_title.strip()
 
-def findPlexMedia(torrent, plex):
+def findPlexMedia(torrent, plex, qbt_client):
     tags = torrent.tags.split(", ")
     plexid = ""
     for tag in tags:
@@ -48,12 +48,41 @@ def findPlexMedia(torrent, plex):
     for plexMovie in plex.library.section("Movies").search(""):
         plexMovieid = toPlainStr(plexMovie.guid).replace(" ", "-")
         if plexid == plexMovieid:
+            if setTorrentProgress(plexMovie, torrent.progress, torrent.state, config.QBITTORRENT_PLEX_MOVIEPROGRESS_FIELD_ID):                
+                torrent.tags = torrent.tags + ","+config.QBITTORRENT_COMPLETE_TAG.lower()
             return plexMovie
 
-    # for plexShow in plex.library.section("Tv Shows").search(""):
-    #     plexShowid = toPlainStr(plexShow.guid).replace(" ", "-")
-    #     if plexid == plexShowid:
-    #         return plexShow
+    for plexShow in plex.library.section("Tv Shows").search(""):
+        plexShowid = toPlainStr(plexShow.guid).replace(" ", "-")
+        if plexid == plexShowid:
+            if setTorrentProgress(plexShow, torrent.progress, torrent.state, config.QBITTORRENT_PLEX_SHOWPROGRESS_FIELD_ID):                
+                torrent.tags = torrent.tags + ","+config.QBITTORRENT_COMPLETE_TAG.lower()
+            contents = qbt_client.torrents_files(torrent.hash).data
+            episodeList = plexShow.episodes()
+            for content in contents:
+                contentFilename = content.name.split("/")[-1]
+                for episode in episodeList:
+                    for media in episode.media:
+                        for part in media.parts:
+                            mediaFilename = part.file.split("\\")[-1]
+                            if(mediaFilename == contentFilename):
+                                state = "downloading"
+                                if hasattr(content, 'is_seed') :
+                                    state = "uploading"
+                                setTorrentProgress(episode, content.progress, state, config.QBITTORRENT_PLEX_SHOWPROGRESS_FIELD_ID)
+
+            return plexShow
+
+def setTorrentProgress(plexMediaItem, progress, state, field):
+    if(QBittorrentStates.__dict__[state] in config.DOWNLOAD_PROGRESS_FORMAT):
+        pb = ProgressBar.progress_bar_str(progress, config.PROGRESSBAR_WIDTH, config.PROGRESSBAR_START, config.PROGRESSBAR_STOP, config.PROGRESSBAR_WHOLE, config.PROGRESSBAR_BLANK, [])
+        s = config.DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.__dict__[state]].format(progressbar = pb, progress = progress, state = state)
+        plexMediaItem.editField(field, s, locked=True)
+        return False
+    else:
+        plexMediaItem.editField(field, "", locked=False)
+        plexMediaItem.refresh()
+        return True
 
 def main(args):
     try:
@@ -81,20 +110,9 @@ def main(args):
             tags = torrent.tags.split(", ")
             if(config.QBITTORRENT_PLEXAUTOTORRENT_TAG.lower() in tags):
                 if(config.QBITTORRENT_COMPLETE_TAG.lower() not in tags):
-                    plexMediaItem = findPlexMedia(torrent, plex)
-                    if(plexMediaItem != None):
-                        if(QBittorrentStates.__dict__[torrent.state] in config.DOWNLOAD_PROGRESS_FORMAT):
-                            pb = ProgressBar.progress_bar_str(torrent.progress, config.PROGRESSBAR_WIDTH, config.PROGRESSBAR_START, config.PROGRESSBAR_STOP, config.PROGRESSBAR_WHOLE, config.PROGRESSBAR_BLANK, [])
-                            pb2 = ProgressBar.progress_bar_str_v2(torrent.progress, config.PROGRESSBAR_WIDTH, config.PROGRESSBAR_V2)
-
-                            plexMediaItem.editField("editionTitle", config.DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.__dict__[torrent.state]].format(progressbar = pb, t = torrent), locked=True)
-                            doLogDebug(f'torrent: {torrent.name} :: {torrent.state} ::'+ config.DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.__dict__[torrent.state]].format(progressbar = pb2, t = torrent) + ' :: '+config.DOWNLOAD_PROGRESS_FORMAT[QBittorrentStates.__dict__[torrent.state]].format(progressbar = pb, t = torrent))
-                        else:
-                            plexMediaItem.editField("editionTitle", "", locked=False)
-                            doLogDebug(f'torrent: {torrent.name} :: {torrent.state} :: Completed')
-                            torrent.tags = torrent.tags + ","+config.QBITTORRENT_COMPLETE_TAG
-                    else:
-                        torrent.tags = torrent.tags.replace(config.QBITTORRENT_PLEXAUTOTORRENT_TAG.lower(), "")
+                    plexMediaItem = findPlexMedia(torrent, plex, qbt_client)
+                    if(plexMediaItem == None):
+                        torrent.add_tags(torrent.tags.replace(config.QBITTORRENT_PLEXAUTOTORRENT_TAG.lower(), ""))
 
 
             
